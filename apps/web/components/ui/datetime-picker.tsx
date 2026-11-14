@@ -176,7 +176,7 @@ export function DateTimePicker({
             type="button"
             aria-label="Previous month"
             onClick={() => stepMonth(-1)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded border border-ink/15 bg-white text-ink transition-colors hover:border-primary-400 hover:bg-cream"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-ink/15 bg-white text-ink transition-colors hover:border-primary-400 hover:bg-cream"
           >
             <ChevronLeft className="h-4 w-4" aria-hidden />
           </button>
@@ -184,7 +184,7 @@ export function DateTimePicker({
             type="button"
             aria-label="Next month"
             onClick={() => stepMonth(1)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded border border-ink/15 bg-white text-ink transition-colors hover:border-primary-400 hover:bg-cream"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-ink/15 bg-white text-ink transition-colors hover:border-primary-400 hover:bg-cream"
           >
             <ChevronRight className="h-4 w-4" aria-hidden />
           </button>

@@ -16,6 +16,7 @@ import {
   formatTime,
   isSessionLive,
   sessionEndMs,
+  sessionPhase,
   statusLabel,
 } from "@/lib/calendar";
 import { cn } from "@/lib/utils";
@@ -82,6 +83,9 @@ export function DayOverlay({
   }, [onClose]);
 
   const liveCount = sessions.filter((s) => isSessionLive(s.scheduled_at, s.ends_at, now)).length;
+  const needsOutcome = sessions.filter(
+    (s) => sessionPhase(s.scheduled_at, s.ends_at, now) === "past"
+  ).length;
   const fullDate = day.toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
@@ -137,6 +141,12 @@ export function DayOverlay({
                     {liveCount} live now
                   </span>
                 )}
+                {needsOutcome > 0 && (
+                  <span className="ml-1.5 inline-flex items-center gap-1 font-bold text-accent-700">
+                    <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-accent-600" />
+                    {needsOutcome} need outcome
+                  </span>
+                )}
               </p>
             </div>
           </div>
@@ -145,7 +155,7 @@ export function DayOverlay({
             aria-label="Close day details"
             onClick={onClose}
             autoFocus
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-cream hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-cream hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
           >
             <X className="h-4 w-4" aria-hidden />
           </button>
@@ -186,6 +196,7 @@ export function DayOverlay({
               {sessions.map((s) => {
                 const alias = s.student_id ? (aliases.get(s.student_id) ?? "Student") : "Walk-in";
                 const live = isSessionLive(s.scheduled_at, s.ends_at, now);
+                const past = sessionPhase(s.scheduled_at, s.ends_at, now) === "past";
                 const counselor =
                   role === "guidance_head" && s.counselor_id
                     ? (counselorNames.get(s.counselor_id) ?? "Counselor")
@@ -222,6 +233,11 @@ export function DayOverlay({
                             <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent-600 px-1.5 py-px text-[10px] font-bold uppercase tracking-wider text-white">
                               <span aria-hidden className="h-1 w-1 animate-pulse rounded-full bg-white" />
                               Live
+                            </span>
+                          )}
+                          {!live && past && (
+                            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent-100 px-1.5 py-px text-[10px] font-bold uppercase tracking-wider text-accent-700">
+                              Needs outcome
                             </span>
                           )}
                         </span>
@@ -270,8 +286,12 @@ export function DayOverlay({
         <footer className="flex items-center gap-2 border-t border-ink/10 bg-cream px-5 py-3 text-[12px] font-medium text-ink-muted">
           <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden />
           {selected
-            ? "Complete or mark no-show once the session has started."
-            : "Select a session to view its details and available actions."}
+            ? role === "counselor"
+              ? "Complete or mark no-show once the session has started."
+              : "Review the details — the assigned counselor closes the session."
+            : needsOutcome > 0
+              ? `${needsOutcome} session${needsOutcome === 1 ? "" : "s"} passed without an outcome — open one to review it.`
+              : "Select a session to view its details and available actions."}
         </footer>
       </div>
     </div>

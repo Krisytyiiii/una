@@ -67,8 +67,7 @@ export function ReferralExcelPreview({ data }: { data: ReferralPreviewData }) {
 
   return (
     // Inline paper colours: this is a printable document, so it must stay a
-    // white sheet with black ink even when the app is in dark mode (the
-    // global `.dark .bg-white` remap would otherwise make it unreadable).
+    // white sheet with black ink regardless of the surrounding UI tokens.
     <div
       id="referral-form-sheet"
       className="bg-white text-black"

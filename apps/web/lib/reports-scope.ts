@@ -226,7 +226,11 @@ export type TrendBucket = { label: string; sessions: number };
  * inclusively. `place()` drops an ISO timestamp into its bucket; out-of-range
  * rows are ignored.
  */
-export function buildTrendBuckets(fromISO: string, toISO: string): { buckets: TrendBucket[]; place: (iso: string) => void } {
+export function buildTrendBuckets(fromISO: string, toISO: string): {
+  buckets: TrendBucket[];
+  place: (iso: string) => void;
+  indexOf: (iso: string) => number;
+} {
   const fromDay = startOfDayUTC(new Date(fromISO));
   const toDay = startOfDayUTC(new Date(toISO));
   const spanDays = Math.max(1, Math.round((toDay - fromDay) / DAY_MS) + 1);
@@ -236,11 +240,15 @@ export function buildTrendBuckets(fromISO: string, toISO: string): { buckets: Tr
     label: fmtDayShort(fromDay + i * sizeDays * DAY_MS),
     sessions: 0,
   }));
-  const place = (iso: string) => {
+  const indexOf = (iso: string) => {
     const t = new Date(iso).getTime();
-    if (Number.isNaN(t)) return;
+    if (Number.isNaN(t)) return -1;
     const i = Math.floor((startOfDayUTC(new Date(t)) - fromDay) / (sizeDays * DAY_MS));
-    if (i >= 0 && i < n) buckets[i].sessions += 1;
+    return i >= 0 && i < n ? i : -1;
   };
-  return { buckets, place };
+  const place = (iso: string) => {
+    const i = indexOf(iso);
+    if (i >= 0) buckets[i].sessions += 1;
+  };
+  return { buckets, place, indexOf };
 }

@@ -7,6 +7,12 @@ export const APPOINTMENT_BOARD_COLS =
 /** Hard ceiling — the pager never asks for more (plan: 10/25/50, max 50). */
 export const MAX_APPOINTMENT_PAGE_SIZE = 50;
 
+/**
+ * Statuses that still need someone to act. The board defaults to this set so
+ * the soonest session floats to the top instead of old completed history.
+ */
+export const ACTIVE_APPOINTMENT_STATUSES = ["pending", "assigned", "confirmed"] as const;
+
 export type AppointmentCursor = {
   scheduled_at: string;
   created_at: string;
@@ -36,6 +42,7 @@ export async function listAppointmentPage(
   db: DbClient,
   opts?: {
     counselorId?: string | null;
+    /** Single status, "active" (pending/assigned/confirmed), or "all". */
     status?: string;
     mode?: string;
     /** Head filter: counselor id, "unassigned", or "all". */
@@ -58,7 +65,11 @@ export async function listAppointmentPage(
     .order("id", { ascending: true })
     .limit(size + 1);
   if (opts?.counselorId) q = q.eq("counselor_id", opts.counselorId);
-  if (opts?.status && opts.status !== "all") q = q.eq("status", opts.status);
+  if (opts?.status && opts.status !== "all") {
+    q = opts.status === "active"
+      ? q.in("status", [...ACTIVE_APPOINTMENT_STATUSES])
+      : q.eq("status", opts.status);
+  }
   if (opts?.mode && opts.mode !== "all") q = q.eq("mode", opts.mode);
   if (opts?.counselor && opts.counselor !== "all") {
     q = opts.counselor === "unassigned" ? q.is("counselor_id", null) : q.eq("counselor_id", opts.counselor);

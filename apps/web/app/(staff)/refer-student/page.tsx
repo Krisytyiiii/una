@@ -74,7 +74,7 @@ function WhatNextMenu() {
         onClick={toggle}
         aria-haspopup="true"
         aria-expanded={open}
-        className="inline-flex h-8 items-center gap-1.5 rounded border-2 border-ink/15 bg-white px-4 text-[13px] font-bold text-ink transition hover:border-primary-400"
+        className="inline-flex h-6 items-center gap-1.5 rounded-full border border-ink/15 bg-white px-3 text-[12px] font-bold text-ink transition hover:border-primary-400"
       >
         What happens next?
         <ChevronDown aria-hidden className={cn("h-4 w-4 shrink-0 text-ink-faint transition-transform duration-200", open && "rotate-180")} />

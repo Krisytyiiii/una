@@ -13,7 +13,7 @@ export function FinalCTA() {
         <div className="mx-auto max-w-4xl px-4 sm:px-6">
           <AnimatedSection>
             {/* Light auth-style card: same surface treatment as the login panel. */}
-            <div className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#F6F9FF] px-6 py-10 text-center text-ink shadow-[0_28px_80px_-24px_rgba(0,0,0,0.85)] sm:px-12 sm:py-14">
+            <div className="relative overflow-hidden rounded-[1.75rem] border border-ink/10 bg-[#F6F9FF] px-6 py-10 text-center text-ink shadow-card sm:px-12 sm:py-14">
               <div
                 aria-hidden
                 className="pointer-events-none absolute inset-0 bg-[radial-gradient(110%_80%_at_80%_0%,rgba(37,99,235,0.12),transparent_55%)]"
@@ -61,15 +61,15 @@ export function FinalCTA() {
 
           {/* Built-with strip */}
           <AnimatedSection delay={0.1} className="mt-8">
-            <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] px-6 py-6 shadow-[0_18px_50px_-30px_rgba(0,0,0,0.9)] backdrop-blur-xl">
-              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-blue-100/40">
+            <div className="rounded-[2rem] border border-ink/10 bg-white/80 px-6 py-6 shadow-card backdrop-blur-xl">
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-ink-muted">
                 Built with — capstone tech stack
               </p>
               <ul className="mt-4 flex flex-wrap items-center justify-center gap-2.5" aria-label="Technologies used">
                 {stack.map((t) => (
                   <li
                     key={t}
-                    className="rounded-full border border-white/10 bg-white/[0.05] px-4 py-1.5 text-sm font-bold text-blue-100/75"
+                    className="rounded-full border border-ink/10 bg-white px-4 py-1.5 text-sm font-bold text-ink-soft"
                   >
                     {t}
                   </li>
@@ -80,26 +80,26 @@ export function FinalCTA() {
         </div>
       </section>
 
-      <footer className="relative z-10 border-t border-white/10 bg-[#050C16]/60 backdrop-blur" aria-label="Footer">
+      <footer className="relative z-10 border-t border-ink/10 bg-white/60 backdrop-blur" aria-label="Footer">
         <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
           <div className="grid gap-10 md:grid-cols-[1.2fr_1fr_1fr]">
             <div>
               <Logo
                 subtitle="DOrSU Guidance & Counseling"
-                subtitleClassName="text-blue-200/50"
+                subtitleClassName="text-ink-muted"
               />
-              <p className="mt-4 max-w-sm text-sm leading-relaxed text-blue-100/50">
+              <p className="mt-4 max-w-sm text-sm leading-relaxed text-ink-muted">
                 A capstone project for Davao Oriental State University&apos;s
                 Guidance and Counseling Office — making student wellbeing
                 accessible, private, and data-informed.
               </p>
-              <p className="mt-3 flex items-start gap-1.5 text-sm text-blue-100/50">
+              <p className="mt-3 flex items-start gap-1.5 text-sm text-ink-muted">
                 <MapPin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
                 Guang-guang, Dahican, City of Mati, Davao Oriental
               </p>
             </div>
             <nav aria-label="Explore">
-              <p className="text-xs font-bold uppercase tracking-[0.14em] text-blue-100/40">
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-ink-muted">
                 Explore
               </p>
               <ul className="mt-3 space-y-2 text-[15px] font-medium">
@@ -113,7 +113,7 @@ export function FinalCTA() {
                   <li key={href}>
                     <a
                       href={href}
-                      className="text-blue-100/65 transition hover:text-white hover:underline"
+                      className="text-ink-soft transition hover:text-ink hover:underline"
                     >
                       {label}
                     </a>
@@ -122,7 +122,7 @@ export function FinalCTA() {
               </ul>
             </nav>
             <nav aria-label="Trust and roles">
-              <p className="text-xs font-bold uppercase tracking-[0.14em] text-blue-100/40">
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-ink-muted">
                 Trust &amp; roles
               </p>
               <ul className="mt-3 space-y-2 text-[15px] font-medium">
@@ -135,7 +135,7 @@ export function FinalCTA() {
                   <li key={label}>
                     <a
                       href={href}
-                      className="text-blue-100/65 transition hover:text-white hover:underline"
+                      className="text-ink-soft transition hover:text-ink hover:underline"
                     >
                       {label}
                     </a>
@@ -144,7 +144,7 @@ export function FinalCTA() {
               </ul>
             </nav>
           </div>
-          <div className="mt-10 flex flex-col items-center justify-between gap-3 border-t border-white/10 pt-6 text-[13px] text-blue-100/40 sm:flex-row">
+          <div className="mt-10 flex flex-col items-center justify-between gap-3 border-t border-ink/10 pt-6 text-[13px] text-ink-muted sm:flex-row">
             <p>© 2026 DOrSU Guidance and Counseling Office • Capstone project demo</p>
             <p>Data Privacy Act (RA 10173) aware • Crafted with care in Mati City</p>
           </div>

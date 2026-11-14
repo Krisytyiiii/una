@@ -25,6 +25,33 @@ export function statusTone(s: string): "info" | "success" | "warning" | "danger"
   return "warning";
 }
 
+/**
+ * Distinct badge hue per status. The shared five-tone Badge palette collapsed
+ * assigned/confirmed into one blue and cancelled/rejected/no_show into one red,
+ * which made the board hard to scan. Each status gets its own hue here.
+ */
+export function statusBadgeClass(s: string): string {
+  const base = "inline-flex items-center whitespace-nowrap rounded-full px-3 py-1 text-xs font-bold ring-1 ring-inset";
+  switch (s) {
+    case "pending":
+      return `${base} bg-amber-100 text-amber-800 ring-amber-200`;
+    case "assigned":
+      return `${base} bg-sky-100 text-sky-800 ring-sky-200`;
+    case "confirmed":
+      return `${base} bg-violet-100 text-violet-800 ring-violet-200`;
+    case "completed":
+      return `${base} bg-emerald-100 text-emerald-800 ring-emerald-200`;
+    case "cancelled":
+      return `${base} bg-slate-100 text-slate-600 ring-slate-200`;
+    case "rejected":
+      return `${base} bg-rose-100 text-rose-700 ring-rose-200`;
+    case "no_show":
+      return `${base} bg-orange-100 text-orange-800 ring-orange-200`;
+    default:
+      return `${base} bg-ink/10 text-ink-muted ring-ink/10`;
+  }
+}
+
 /** Full schedule line for the detail modal — "Friday, March 6 · 2:00 PM". */
 export function formatLong(iso: string): string {
   const d = new Date(iso);
@@ -58,16 +85,16 @@ export function formatScheduleRange(startIso: string, endIso: string | null): st
 }
 
 export const HEAD_LEGEND: { icon: typeof Check; label: string; desc: string; variant: "accent" | "outline" }[] = [
-  { icon: Check, label: "Assign", desc: "Pending → assigned", variant: "accent" },
-  { icon: X, label: "Reject", desc: "Pending → rejected", variant: "outline" },
+  { icon: Check, label: "Assign", desc: "Give a pending request to a counselor.", variant: "accent" },
+  { icon: X, label: "Reject", desc: "Decline a pending request.", variant: "outline" },
 ];
 
 export const COUNSELOR_LEGEND: { icon: typeof Check; label: string; desc: string; variant: "accent" | "outline" }[] = [
-  { icon: Check, label: "Confirm", desc: "Assigned → confirmed + set schedule inside your slots (+ Meet link when online)", variant: "accent" },
-  { icon: CalendarClock, label: "Reschedule", desc: "Move an assigned/confirmed session inside your slots (student notified)", variant: "outline" },
-  { icon: CheckCheck, label: "Complete", desc: "Confirmed → completed (once session time passes)", variant: "accent" },
-  { icon: UserX, label: "No-show", desc: "Confirmed, student didn't arrive (once session time passes)", variant: "outline" },
-  { icon: FileText, label: "Notes", desc: "Document private session notes (completed sessions only)", variant: "outline" },
+  { icon: Check, label: "Confirm", desc: "Say yes and pick the session date and time.", variant: "accent" },
+  { icon: CalendarClock, label: "Reschedule", desc: "Move the session to another time.", variant: "outline" },
+  { icon: CheckCheck, label: "Complete", desc: "The session happened — close it out.", variant: "accent" },
+  { icon: UserX, label: "No-show", desc: "The student didn't come — close it out.", variant: "outline" },
+  { icon: FileText, label: "Notes", desc: "Write the private session notes.", variant: "outline" },
 ];
 
 export type ActionKind = "confirm" | "complete" | "no-show" | "reject" | "reschedule";

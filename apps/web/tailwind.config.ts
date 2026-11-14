@@ -25,8 +25,13 @@ const config: Config = {
         accent: colors.accent,
       },
       fontFamily: {
-        display: ["var(--font-poppins)", ...typography.fontFamily.display],
-        body: ["var(--font-nunito)", ...typography.fontFamily.body],
+        display: ["var(--font-roboto)", ...typography.fontFamily.display],
+        body: ["var(--font-roboto)", ...typography.fontFamily.body],
+        // Everything resolves to Roboto — including italic accents (`font-serif`)
+        // and technical IDs (`font-mono`) — so the web app uses one typeface.
+        sans: ["var(--font-roboto)", ...typography.fontFamily.body],
+        serif: ["var(--font-roboto)", ...typography.fontFamily.body],
+        mono: ["var(--font-roboto)", ...typography.fontFamily.body],
       },
       borderRadius: {
         "4xl": "2rem",

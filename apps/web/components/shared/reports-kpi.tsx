@@ -4,10 +4,23 @@ import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /** A KPI change chip — visual only; callers decide which metric it belongs to. */
+export type KpiDeltaTone = "positive" | "negative" | "neutral";
+
 export type KpiDelta = {
   direction: "up" | "down" | "flat";
   label: string;
+  /**
+   * Whether the change is good, bad, or simply informational. Badges use
+   * direction only: up = green, down = red, flat = neutral.
+   */
+  tone: KpiDeltaTone;
 };
+
+/** Direction-only tone: positive changes are green, negative ones red. */
+function toneFor(change: number): KpiDeltaTone {
+  if (change === 0) return "neutral";
+  return change > 0 ? "positive" : "negative";
+}
 
 /** Relative change chip ("+12% vs previous"). Null when there is no baseline. */
 export function relativeDelta(change: number | null): KpiDelta | null {
@@ -15,6 +28,7 @@ export function relativeDelta(change: number | null): KpiDelta | null {
   return {
     direction: change > 0 ? "up" : change < 0 ? "down" : "flat",
     label: `${change > 0 ? "+" : ""}${change}% vs previous`,
+    tone: toneFor(change),
   };
 }
 
@@ -24,6 +38,7 @@ export function pointDelta(change: number | null): KpiDelta | null {
   return {
     direction: change > 0 ? "up" : change < 0 ? "down" : "flat",
     label: `${change > 0 ? "+" : ""}${change} pts vs previous`,
+    tone: toneFor(change),
   };
 }
 
@@ -49,9 +64,9 @@ export function ReportKpiCard({
           <span
             className={cn(
               "inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-bold",
-              delta.direction === "up" && "bg-blue-50 text-primary-700",
-              delta.direction === "down" && "bg-amber-50 text-amber-700",
-              delta.direction === "flat" && "bg-cream text-ink-muted"
+              delta.tone === "positive" && "bg-emerald-50 text-emerald-700",
+              delta.tone === "negative" && "bg-red-50 text-red-700",
+              delta.tone === "neutral" && "bg-blue-50 text-primary-700"
             )}
           >
             <Icon className="h-3 w-3" aria-hidden />

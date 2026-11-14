@@ -31,70 +31,70 @@ export type Feature = {
 export const features: Feature[] = [
   {
     icon: CalendarCheck,
-    tint: "bg-blue-600",
+    tint: "bg-blue-100 text-blue-700",
     tag: "Booking",
     title: "Online appointment scheduling",
     body: "Book, reschedule, or cancel in minutes — no Facebook threads, no QR-code hunt, no waiting in line.",
   },
   {
     icon: ClipboardList,
-    tint: "bg-blue-500",
+    tint: "bg-blue-100 text-blue-600",
     tag: "Check-in",
     title: "PSS-10 stress assessment",
     body: "A short, validated 10-question check-in before each session so counselors understand you faster.",
   },
   {
     icon: EyeOff,
-    tint: "bg-blue-700",
+    tint: "bg-blue-100 text-blue-700",
     tag: "Privacy",
     title: "Secure anonymous identity",
     body: "Reach out without revealing your name. Your identity stays protected unless you choose otherwise.",
   },
   {
     icon: LayoutDashboard,
-    tint: "bg-blue-400",
+    tint: "bg-blue-100 text-blue-600",
     tag: "Counselors",
     title: "Counselor dashboard",
     body: "Schedules, student records, and session notes in one calm workspace — less admin, more care.",
   },
   {
     icon: BarChart3,
-    tint: "bg-yellow-500",
+    tint: "bg-yellow-100 text-yellow-700",
     tag: "Analytics",
     title: "Analytics Module",
     body: "Stress trends, common concerns, and peak periods turned into reports for data-driven decisions.",
   },
   {
     icon: MessagesSquare,
-    tint: "bg-blue-500",
+    tint: "bg-blue-100 text-blue-600",
     tag: "Connection",
     title: "Real-time chat",
     body: "Gentle, private messaging between students and counselors before, between, and after sessions.",
   },
   {
     icon: CalendarDays,
-    tint: "bg-yellow-500",
+    tint: "bg-yellow-100 text-yellow-700",
     tag: "Community",
     title: "Event management",
     body: "Wellness talks, announcements, and activities — easy to find, easy to join, never buried.",
   },
   {
     icon: Video,
-    tint: "bg-blue-400",
+    tint: "bg-blue-100 text-blue-600",
     tag: "Online",
     title: "Embedded Google Meet",
     body: "Join online sessions right from your booking with a secure Meet link. No extra apps to figure out.",
   },
   {
     icon: KeyRound,
-    tint: "bg-yellow-400",
+    tint: "bg-yellow-100 text-yellow-700",
     tag: "Safety",
     title: "Break-Glass Emergency Access",
     body: "In critical or self-harm situations, authorized counselors can override anonymity — fully audit-logged.",
   },
   {
     icon: Send,
-    tint: "bg-blue-600",
+    tint: "bg-blue-100 text-blue-700",
     tag: "Referral",
     title: "Faculty referral",
     body: "Faculty can quietly flag students who may need support, so no one slips through unnoticed.",
@@ -113,7 +113,7 @@ export type Step = {
 export const steps: Step[] = [
   {
     icon: UserPlus,
-    tint: "bg-blue-600",
+    tint: "bg-blue-100 text-blue-700",
     step: "Step 1",
     title: "Sign up privately",
     body: "Create your account in a minute. Stay anonymous — share only what feels comfortable.",
@@ -121,7 +121,7 @@ export const steps: Step[] = [
   },
   {
     icon: ClipboardCheck,
-    tint: "bg-blue-500",
+    tint: "bg-blue-100 text-blue-600",
     step: "Step 2",
     title: "Take the PSS-10",
     body: "Answer 10 quick questions about the last month. It helps your counselor meet you where you are.",
@@ -129,7 +129,7 @@ export const steps: Step[] = [
   },
   {
     icon: CalendarCheck,
-    tint: "bg-blue-400",
+    tint: "bg-blue-100 text-blue-600",
     step: "Step 3",
     title: "Book your appointment",
     body: "Pick an open slot, choose online or in-person, reschedule anytime life gets busy.",
@@ -137,7 +137,7 @@ export const steps: Step[] = [
   },
   {
     icon: Video,
-    tint: "bg-yellow-400",
+    tint: "bg-yellow-100 text-yellow-700",
     step: "Step 4",
     title: "Chat & meet your counselor",
     body: "Message beforehand if you're nervous, then join via embedded Google Meet or visit the office.",
@@ -145,7 +145,7 @@ export const steps: Step[] = [
   },
   {
     icon: HeartHandshake,
-    tint: "bg-blue-500",
+    tint: "bg-blue-100 text-blue-600",
     step: "Step 5",
     title: "Follow-up & grow",
     body: "Get notes, next steps, and wellness events. Retake PSS-10 to see your progress over time.",
@@ -163,25 +163,25 @@ export type SafetyItem = {
 export const safetyItems: SafetyItem[] = [
   {
     icon: EyeOff,
-    tint: "bg-blue-600",
+    tint: "bg-blue-100 text-blue-700",
     title: "Anonymous by default",
     body: "Your name and student ID are hidden from counselors unless you reveal them. Ask for help without fear of being recognized or judged.",
   },
   {
     icon: KeyRound,
-    tint: "bg-yellow-400",
+    tint: "bg-yellow-100 text-yellow-700",
     title: "Break-Glass Emergency Protocol",
     body: "Only in critical or self-harm situations can an authorized counselor request to reveal an identity — and only with senior approval.",
   },
   {
     icon: ScrollText,
-    tint: "bg-blue-500",
+    tint: "bg-blue-100 text-blue-600",
     title: "Fully audit-logged",
     body: "Every emergency access is timestamped, justified, and reviewable. No silent overrides, no missing trail — safety with accountability.",
   },
   {
     icon: Scale,
-    tint: "bg-blue-400",
+    tint: "bg-blue-100 text-blue-600",
     title: "RA 10173 compliant",
     body: "Built around the Data Privacy Act of 2012: consent-first, minimal data, encrypted storage via Supabase, and clear retention rules.",
   },
@@ -198,8 +198,8 @@ export const stressBars = [
 ];
 
 export const concernBars = [
-  { label: "Academic pressure", pct: 68, color: "bg-blue-500" },
-  { label: "Anxiety & sleep", pct: 54, color: "bg-blue-400" },
-  { label: "Family & finances", pct: 41, color: "bg-blue-300" },
+  { label: "Academic pressure", pct: 68, color: "bg-blue-400" },
+  { label: "Anxiety & sleep", pct: 54, color: "bg-blue-300" },
+  { label: "Family & finances", pct: 41, color: "bg-blue-200" },
   { label: "Relationships", pct: 33, color: "bg-yellow-300" },
 ];

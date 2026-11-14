@@ -18,15 +18,24 @@ export const HEAD_DASHBOARD_KEY = ["dashboard", "head"] as const;
 /** Fresh window — inside it, going back to /dashboard renders zero-fetch. */
 export const HEAD_DASHBOARD_STALE_MS = 60_000;
 
-/** Default view when no range is supplied (also used by sidebar prefetch). */
-export const HEAD_DASHBOARD_DEFAULT_RANGE: HeadDashboardRange = { period: "week" };
+/** Default view for the guidance-head dashboard: overall 2026 to date. */
+export function headDashboardDefaultRange(): HeadDashboardRange {
+  return {
+    period: "custom",
+    from: "2026-01-01",
+    to: new Date().toISOString().slice(0, 10),
+  };
+}
 
-export function headDashboardKey(range: HeadDashboardRange = HEAD_DASHBOARD_DEFAULT_RANGE) {
+/** Stable snapshot used by sidebar prefetch (refreshed per app load). */
+export const HEAD_DASHBOARD_DEFAULT_RANGE: HeadDashboardRange = headDashboardDefaultRange();
+
+export function headDashboardKey(range: HeadDashboardRange = headDashboardDefaultRange()) {
   return [...HEAD_DASHBOARD_KEY, range.period, range.from ?? "", range.to ?? ""] as const;
 }
 
 export async function fetchHeadDashboard(
-  range: HeadDashboardRange = HEAD_DASHBOARD_DEFAULT_RANGE
+  range: HeadDashboardRange = headDashboardDefaultRange()
 ): Promise<HeadDashboardPayload> {
   const params = new URLSearchParams({ period: range.period });
   if (range.period === "custom") {
@@ -45,10 +54,11 @@ export async function fetchHeadDashboard(
 
 /**
  * Cached admin dashboard query — stale-while-revalidate, one cache entry per
- * period. `keepPreviousData` means switching Today → Month keeps the old cards
- * on screen (with an "updating" spinner) instead of flashing skeletons.
+ * period. `keepPreviousData` keeps the cache entry alive while the new range
+ * loads; the view shows its skeleton whenever a fetch is in flight so the old
+ * period's numbers are never mistaken for the new one.
  */
-export function useHeadDashboard(range: HeadDashboardRange = HEAD_DASHBOARD_DEFAULT_RANGE) {
+export function useHeadDashboard(range: HeadDashboardRange = headDashboardDefaultRange()) {
   return useQuery({
     queryKey: headDashboardKey(range),
     queryFn: () => fetchHeadDashboard(range),
@@ -66,8 +76,8 @@ export function usePrefetchHeadDashboard(enabled = true) {
   return () =>
     enabled &&
     qc.prefetchQuery({
-      queryKey: headDashboardKey(HEAD_DASHBOARD_DEFAULT_RANGE),
-      queryFn: () => fetchHeadDashboard(HEAD_DASHBOARD_DEFAULT_RANGE),
+      queryKey: headDashboardKey(headDashboardDefaultRange()),
+      queryFn: () => fetchHeadDashboard(headDashboardDefaultRange()),
       staleTime: HEAD_DASHBOARD_STALE_MS,
     });
 }

@@ -77,7 +77,7 @@ export function NotificationRow({
               type="button"
               onClick={() => void onMarkRead(n.id)}
               disabled={markingRead}
-              className="inline-flex h-8 items-center gap-1.5 rounded px-3 text-[13px] font-bold text-primary-600 transition hover:bg-blue-50 hover:underline disabled:opacity-50"
+              className="inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-[11.5px] font-bold text-primary-600 transition hover:bg-blue-50 hover:underline disabled:opacity-50"
             >
               {markingRead && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />}
               {markingRead ? "Marking…" : "Mark read"}

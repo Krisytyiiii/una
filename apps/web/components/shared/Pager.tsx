@@ -10,10 +10,10 @@ import { cn } from "@/lib/utils";
  * approximate total; Prev/Next clamp at the edges. hasMore=false hides
  * forward motion past the last known page.
  *
- * `busy` is the canonical "page/filter change in flight" state: controls are
- * disabled, `aria-busy` is set, and a small inline spinner replaces the
- * dead space — the rows above stay visible (keepPreviousData), so the page
- * never blanks during pagination.
+ * `busy` is the canonical "page/filter change in flight" state: `aria-busy` is
+ * set and a small inline spinner replaces the dead space. Controls stay
+ * clickable — disabling them while a page loads is what made rapid paging feel
+ * queued. Rows are replaced by the board's skeleton until the next page lands.
  */
 export function Pager({
   page,
@@ -54,10 +54,10 @@ export function Pager({
       </span>
       <button
         type="button"
-        disabled={busy || page <= 1}
+        disabled={page <= 1}
         onClick={() => onPage(page - 1)}
         aria-label="Previous page"
-        className="rounded-full px-3.5 py-1.5 text-[13px] font-bold text-ink-soft transition hover:bg-cream disabled:opacity-40"
+        className="inline-flex h-6 items-center rounded-full px-2.5 text-[12px] font-bold text-ink-soft transition hover:bg-cream disabled:opacity-40"
       >
         Prev
       </button>
@@ -65,12 +65,11 @@ export function Pager({
         <button
           key={p}
           type="button"
-          disabled={busy}
           onClick={() => onPage(p)}
           aria-label={`Page ${p}`}
           aria-current={p === page ? "page" : undefined}
           className={cn(
-            "min-w-[2rem] rounded-full px-2.5 py-1.5 text-[13px] font-bold transition disabled:opacity-60",
+            "inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full px-2 text-[12px] font-bold transition disabled:opacity-60",
             p === page ? "bg-primary-600 text-white" : "text-ink-soft hover:bg-cream"
           )}
         >
@@ -79,10 +78,10 @@ export function Pager({
       ))}
       <button
         type="button"
-        disabled={busy || !hasMore}
+        disabled={!hasMore}
         onClick={() => onPage(page + 1)}
         aria-label="Next page"
-        className="rounded-full px-3.5 py-1.5 text-[13px] font-bold text-ink-soft transition hover:bg-cream disabled:opacity-40"
+        className="inline-flex h-6 items-center rounded-full px-2.5 text-[12px] font-bold text-ink-soft transition hover:bg-cream disabled:opacity-40"
       >
         Next
       </button>

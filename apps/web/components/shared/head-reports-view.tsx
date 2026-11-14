@@ -14,7 +14,13 @@ import {
   Users,
 } from "lucide-react";
 import { ReportAreaChart, ReportBars, ReportDonut, ReportTrendChart } from "@/components/shared/reports-charts";
-import { ReportsFilters, ReportsFiltersSkeleton } from "@/components/shared/reports-filters";
+import { HeadGauge } from "@/components/shared/dashboard/head-gauge";
+import {
+  ReportsFilters,
+  ReportsFiltersSkeleton,
+  ReportsSectionNav,
+  ReportsSectionNavSkeleton,
+} from "@/components/shared/reports-filters";
 import { ReportKpiCard, ReportKpiSkeleton, pointDelta, relativeDelta } from "@/components/shared/reports-kpi";
 import { useHeadReports } from "@/lib/hooks/use-head-reports";
 import type { HeadReportsPayload } from "@/lib/hooks/use-head-reports";
@@ -33,14 +39,16 @@ import {
   APPT_STATUS_META,
   COHORT_SLICE_COLORS,
   FALLBACK_SLICE,
-  MODE_COLORS,
   PRIORITY_META,
   REFERRAL_STATUS_META,
+  SESSION_STATUS_SERIES,
   STRESS_META,
+  UNASSIGNED_SLICE_COLOR,
   ratingColor,
 } from "@/lib/report-palette";
 import { MIN_CELL, isSuppressed, suppressCount } from "@/lib/reports/suppression";
 import { kpiChange, kpiPointChange, rate, summarizeKpi } from "@/lib/reports/kpi-summary";
+import { ratingBarInsight } from "@/lib/sentiment";
 
 function pct(part: number, whole: number): string {
   if (!whole) return "—";
@@ -119,8 +127,12 @@ function KpiGrid({ data }: { data: HeadReportsPayload }) {
   );
 }
 
-/** Overview-only attention strip that links into the relevant section. */
-function AttentionStrip({
+/**
+ * Attention banner shown at the bottom of the reports section rail. Each one
+ * deep-links into the section that can act on it. The CTA is a compact 24px
+ * button anchored to the bottom-right of the card.
+ */
+function AttentionBanner({
   href,
   title,
   detail,
@@ -132,33 +144,49 @@ function AttentionStrip({
   tone?: "amber" | "blue";
 }) {
   return (
-    <Link
-      href={href}
+    <div
       className={
         tone === "amber"
-          ? "flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 transition hover:border-amber-300 hover:bg-amber-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 dark:border-amber-400/25 dark:bg-amber-400/[0.08] dark:hover:border-amber-400/40 dark:hover:bg-amber-400/[0.14]"
-          : "flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 transition hover:border-blue-300 hover:bg-blue-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 dark:border-blue-400/25 dark:hover:border-blue-400/40 dark:hover:bg-blue-400/[0.14]"
+          ? "rounded-lg border border-amber-200 bg-amber-50 p-3"
+          : "rounded-lg border border-blue-200 bg-blue-50 p-3"
       }
     >
-      <span
-        className={
-          tone === "amber"
-            ? "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300"
-            : "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-primary-700"
-        }
-      >
-        <ShieldAlert className="h-4 w-4" aria-hidden />
-      </span>
-      <span className="min-w-0">
-        <span className="block text-sm font-bold text-ink">{title}</span>
-        <span className="mt-0.5 block text-[13px] leading-relaxed text-ink-muted">{detail}</span>
-      </span>
-      <span className="ml-auto shrink-0 self-center text-[13px] font-bold text-primary-700">Open →</span>
-    </Link>
+      <div className="flex items-start gap-2">
+        <span
+          className={
+            tone === "amber"
+              ? "flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700"
+              : "flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-primary-700"
+          }
+        >
+          <ShieldAlert className="h-3.5 w-3.5" aria-hidden />
+        </span>
+        <p className="min-w-0 text-[12px] font-bold leading-snug text-ink">{title}</p>
+      </div>
+      <p className="mt-1.5 text-[11px] leading-relaxed text-ink-muted">{detail}</p>
+      <div className="mt-2.5 flex justify-end">
+        <Link
+          href={href}
+          className="inline-flex h-6 items-center gap-1 rounded bg-primary-600 px-2.5 text-[11px] font-bold text-white shadow-soft transition hover:bg-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
+        >
+          Open <span aria-hidden>→</span>
+        </Link>
+      </div>
+    </div>
   );
 }
 
-function SessionsTrend({ data, range }: { data: HeadReportsPayload; range: ReportRange }) {
+type SessionLifecycleKey = "upcoming" | "completed" | "overdue" | "cancelled" | "rejected" | "no_show";
+
+function lifecycleOf(status: string, scheduledAt: string, nowMs: number): SessionLifecycleKey {
+  if (status === "completed") return "completed";
+  if (status === "cancelled") return "cancelled";
+  if (status === "rejected") return "rejected";
+  if (status === "no_show") return "no_show";
+  return new Date(scheduledAt).getTime() < nowMs ? "overdue" : "upcoming";
+}
+
+function sessionTrend(data: HeadReportsPayload, range: ReportRange) {
   const scoped = range.from !== null && range.to !== null;
   const t = scoped
     ? buildTrendBuckets(range.from as string, range.to as string)
@@ -168,9 +196,43 @@ function SessionsTrend({ data, range }: { data: HeadReportsPayload; range: Repor
         const start = new Date(end.getTime() - 13 * 24 * 60 * 60 * 1000);
         return buildTrendBuckets(start.toISOString(), end.toISOString());
       })();
-  for (const row of data.appointments) t.place(row.scheduled_at);
-  const buckets = t.buckets;
-  if (!buckets.some((b) => b.sessions > 0)) {
+  const counts = t.buckets.map(() => ({
+    upcoming: 0,
+    completed: 0,
+    overdue: 0,
+    cancelled: 0,
+    rejected: 0,
+    no_show: 0,
+  }));
+  const nowMs = Date.now();
+  for (const row of data.appointments) {
+    const i = t.indexOf(row.scheduled_at);
+    if (i < 0) continue;
+    t.buckets[i].sessions += 1;
+    counts[i][lifecycleOf(row.status, row.scheduled_at, nowMs)] += 1;
+  }
+  return t.buckets.map((b, i) => ({ day: b.label, sessions: b.sessions, ...counts[i] }));
+}
+
+/** Top-right peak callout for the sessions trend panel header. */
+function SessionPeak({ data, range }: { data: HeadReportsPayload; range: ReportRange }) {
+  const points = sessionTrend(data, range);
+  if (!points.some((p) => p.sessions > 0)) return null;
+  const peak = points.reduce((a, b) => (b.sessions > a.sessions ? b : a), points[0]);
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-[11px] font-bold text-primary-700">
+      <CalendarDays className="h-3 w-3 shrink-0" aria-hidden />
+      Peak: <span className="text-ink">{peak.day}</span>
+      <span className="text-ink-faint" aria-hidden>·</span>
+      {peak.sessions} session{peak.sessions === 1 ? "" : "s"}
+    </span>
+  );
+}
+
+function SessionsTrend({ data, range }: { data: HeadReportsPayload; range: ReportRange }) {
+  const scoped = range.from !== null && range.to !== null;
+  const points = sessionTrend(data, range);
+  if (!points.some((p) => p.sessions > 0)) {
     return (
       <EmptyState
         icon={CalendarDays}
@@ -179,14 +241,21 @@ function SessionsTrend({ data, range }: { data: HeadReportsPayload; range: Repor
       />
     );
   }
-  const peak = buckets.reduce((a, b) => (b.sessions > a.sessions ? b : a), buckets[0]);
+  const totals = SESSION_STATUS_SERIES.map((s) => ({
+    ...s,
+    total: points.reduce((sum, p) => sum + Number(p[s.key] ?? 0), 0),
+  }));
   return (
     <>
-      <p className="mt-2 text-[13px] text-ink-muted">
-        Peak: <span className="font-bold text-ink">{peak.label}</span> with{" "}
-        <span className="font-bold text-ink">{peak.sessions}</span> session{peak.sessions === 1 ? "" : "s"}.
-      </p>
-      <ReportAreaChart data={buckets.map((b) => ({ day: b.label, sessions: b.sessions }))} />
+      <ReportAreaChart data={points} series={[...SESSION_STATUS_SERIES]} />
+      <ul className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+        {totals.map((s) => (
+          <li key={s.key} className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-ink-muted">
+            <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: s.color }} />
+            {s.label} <span className="font-bold tabular-nums text-ink">{s.total}</span>
+          </li>
+        ))}
+      </ul>
     </>
   );
 }
@@ -201,41 +270,6 @@ function AppointmentStatus({ data }: { data: HeadReportsPayload }) {
     return <EmptyState icon={PieChartIcon} title="No sessions yet" hint="The status breakdown will appear here once appointments are booked." />;
   }
   return <ReportDonut data={slices} />;
-}
-
-function SessionMode({ data }: { data: HeadReportsPayload }) {
-  const counts = new Map<string, number>();
-  for (const row of data.appointments) counts.set(row.mode, (counts.get(row.mode) ?? 0) + 1);
-  const total = [...counts.values()].reduce((a, b) => a + b, 0);
-  const rows = [...counts.entries()].map(([k, v]) => ({
-    key: k,
-    label: k === "in_person" ? "In person" : "Online",
-    value: v,
-    color: k === "in_person" ? MODE_COLORS.in_person : MODE_COLORS.online,
-  }));
-  if (!total) {
-    return <EmptyState icon={MessagesSquare} title="No mode data yet" hint="In-person vs online split will show here." />;
-  }
-  return (
-    <ul className="mt-4 space-y-3">
-      {rows.map((r) => (
-        <li key={r.key}>
-          <div className="flex items-center justify-between text-sm">
-            <span className="font-bold text-ink">{r.label}</span>
-            <span className="font-semibold text-ink-muted">
-              {r.value} · {pct(r.value, total)}
-            </span>
-          </div>
-          <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-ink/10">
-            <div className="h-full rounded-full" style={{ width: `${total ? (r.value / total) * 100 : 0}%`, background: r.color }} />
-          </div>
-        </li>
-      ))}
-      <li className="pt-1 text-[13px] text-ink-muted">
-        Use the split to balance room scheduling against online capacity.
-      </li>
-    </ul>
-  );
 }
 
 function ReferralStatus({ data }: { data: HeadReportsPayload }) {
@@ -254,20 +288,15 @@ function ReferralPriority({ data }: { data: HeadReportsPayload }) {
   const order = ["low", "medium", "high", "urgent"];
   const counts = new Map<string, number>(order.map((k) => [k, 0]));
   for (const row of data.referrals) counts.set(row.priority, (counts.get(row.priority) ?? 0) + 1);
-  const total = [...counts.values()].reduce((a, b) => a + b, 0);
-  if (!total) {
-    return <EmptyState icon={BarChart3} title="No priorities yet" hint="Urgent vs routine mix will show here." />;
-  }
   return (
-    <>
-      <p className="mt-2 text-[13px] text-ink-muted">
-        <span className="font-bold text-ink">{counts.get("urgent") ?? 0} urgent</span> ·{" "}
-        <span className="font-bold text-ink">{counts.get("high") ?? 0} high</span> — triage these first.
-      </p>
-      <ReportBars
-        data={order.map((k) => ({ label: PRIORITY_META[k].label, value: counts.get(k) ?? 0, color: PRIORITY_META[k].color }))}
-      />
-    </>
+    <HeadGauge
+      items={order.map((k) => ({ key: k, name: PRIORITY_META[k].label, value: counts.get(k) ?? 0 }))}
+      colorOf={(key) => PRIORITY_META[key]?.color ?? FALLBACK_SLICE}
+      emptyTitle="No priorities yet"
+      emptyHint="Urgent vs routine mix will show here."
+      centerLabel="referrals"
+      note={`${counts.get("urgent") ?? 0} urgent · ${counts.get("high") ?? 0} high — triage these first.`}
+    />
   );
 }
 
@@ -288,7 +317,7 @@ function Satisfaction({ data }: { data: HeadReportsPayload }) {
         Average <span className="font-bold text-ink">{avg} / 5</span> from{" "}
         <span className="font-bold text-ink">{rows.length}</span> responses.
       </p>
-      <ReportBars data={counts} />
+      <ReportBars data={counts} tooltip={ratingBarInsight} />
     </>
   );
 }
@@ -334,26 +363,59 @@ function ScreeningSummary({ data }: { data: HeadReportsPayload }) {
   const moderate = rows.filter((r) => r.band === "moderate").length;
   const avg = (rows.reduce((a, r) => a + r.total_score, 0) / rows.length).toFixed(1);
   const smallDenominator = rows.length < MIN_CELL;
-  const bandLabel = (n: number) =>
-    `${suppressCount(n) == null ? `<${MIN_CELL}` : n} · ${smallDenominator ? "—" : pct(n, rows.length)}`;
+  const share = (n: number) => (smallDenominator ? null : `${Math.round((n / rows.length) * 100)}%`);
   const summary = [
-    { label: "Screenings", value: String(rows.length), tone: "bg-blue-100 text-blue-800" },
-    { label: "Average score", value: `${avg} / 40`, tone: "bg-blue-100 text-blue-800" },
-    { label: "High band", value: bandLabel(high), tone: "bg-red-100 text-red-800" },
-    { label: "Moderate band", value: bandLabel(moderate), tone: "bg-amber-100 text-amber-800" },
+    {
+      label: "Screenings",
+      value: String(rows.length),
+      unit: "",
+      caption: "PSS-10 submissions in this range",
+      accent: "bg-primary-500",
+    },
+    {
+      label: "Average score",
+      value: avg,
+      unit: "/ 40",
+      caption: "Mean PSS-10 score",
+      accent: "bg-primary-400",
+    },
+    {
+      label: "High band",
+      value: suppressCount(high) == null ? `<${MIN_CELL}` : String(high),
+      unit: share(high) ?? "",
+      caption: share(high) == null ? "Withheld to protect privacy" : "Of screenings — follow up first",
+      accent: "bg-red-400",
+    },
+    {
+      label: "Moderate band",
+      value: String(moderate),
+      unit: share(moderate) ?? "",
+      caption: share(moderate) == null ? "Withheld to protect privacy" : "Of screenings",
+      accent: "bg-amber-400",
+    },
   ];
   return (
-    <ul className="mt-4 space-y-3">
-      {summary.map((r) => (
-        <li key={r.label} className="flex items-center justify-between gap-3 rounded-lg bg-cream px-4 py-3">
-          <span className="text-sm font-semibold text-ink-soft">{r.label}</span>
-          <span className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${r.tone}`}>{r.value}</span>
-        </li>
-      ))}
-      <li className="pt-1 text-[13px] text-ink-muted">
+    <div className="mt-4">
+      <div className="grid grid-cols-2 gap-3">
+        {summary.map((r) => (
+          <div
+            key={r.label}
+            className="relative overflow-hidden rounded-xl border border-ink/10 bg-cream/40 p-3.5"
+          >
+            <span aria-hidden className={`absolute inset-x-0 top-0 h-1 ${r.accent}`} />
+            <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-ink-muted">{r.label}</span>
+            <span className="mt-2 flex items-baseline gap-1">
+              <span className="font-display text-2xl font-bold leading-none tabular-nums text-ink">{r.value}</span>
+              {r.unit && <span className="text-[11px] font-semibold text-ink-faint">{r.unit}</span>}
+            </span>
+            <p className="mt-1.5 text-[10.5px] leading-snug text-ink-muted">{r.caption}</p>
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-[13px] text-ink-muted">
         Follow up high-band students first — bands are signals, not diagnoses.
-      </li>
-    </ul>
+      </p>
+    </div>
   );
 }
 
@@ -381,36 +443,35 @@ function ReferralPipeline({ data }: { data: HeadReportsPayload }) {
 
 function CounselorWorkload({ data }: { data: HeadReportsPayload }) {
   const { ranked, unassignedSessions } = data.workload;
-  if (!ranked.length) {
+  if (!ranked.length && unassignedSessions === 0) {
     return <EmptyState icon={Users} title="No assignments yet" hint="Per-counselor load will appear once sessions are assigned." />;
   }
+  // Same donut + bento pattern as the other report panels: each counselor is a
+  // slice (completion shown under the count) and the unassigned queue is the
+  // amber tail so an overloaded lane or a growing queue is obvious at a glance.
+  const slices = ranked.map((c, i) => ({
+    name: c.name,
+    value: c.total,
+    color: COHORT_SLICE_COLORS[i % COHORT_SLICE_COLORS.length],
+    hint: `${c.completed}/${c.total} completed`,
+  }));
+  if (unassignedSessions > 0) {
+    slices.push({
+      name: "Unassigned",
+      value: unassignedSessions,
+      color: UNASSIGNED_SLICE_COLOR,
+      hint: "Waiting for a counselor",
+    });
+  }
   return (
-    <ul className="mt-3 divide-y divide-ink/10">
-      {ranked.map((c, i) => (
-        <li key={c.id} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
-          <div className="min-w-0">
-            <p className="truncate text-sm font-bold text-ink">
-              <span className="mr-2 text-xs font-bold text-ink-faint">#{i + 1}</span>
-              {c.name}
-            </p>
-            <p className="mt-0.5 truncate text-xs font-medium text-ink-muted">
-              {c.spec ?? "Counselor"} · {c.completed}/{c.total} completed
-            </p>
-          </div>
-          <span className="shrink-0 rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-bold text-blue-800">
-            {c.total} sessions
-          </span>
-        </li>
-      ))}
-      {unassignedSessions > 0 && (
-        <li className="flex items-center justify-between gap-3 py-2.5">
-          <p className="text-sm font-semibold text-ink-muted">Unassigned sessions</p>
-          <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-800">
-            {unassignedSessions}
-          </span>
-        </li>
-      )}
-    </ul>
+    <>
+      <ReportDonut data={slices} />
+      <p className="mt-3 text-[13px] text-ink-muted">
+        {unassignedSessions > 0
+          ? `${unassignedSessions} session${unassignedSessions === 1 ? "" : "s"} still unassigned — rebalance the busiest lane.`
+          : "Every session is assigned — rebalance when one lane carries far more than the rest."}
+      </p>
+    </>
   );
 }
 
@@ -426,29 +487,29 @@ function TopConcerns({ data }: { data: HeadReportsPayload }) {
     e.count += 1;
     counts.set(key, e);
   }
-  const top = [...counts.values()].sort((a, b) => b.count - a.count).slice(0, 5);
+  const sorted = [...counts.values()].sort((a, b) => b.count - a.count);
+  // Top five stay named; the long tail is grouped so the donut never turns into
+  // a confetti ring while the total still reconciles to every logged concern.
+  const slices = sorted.slice(0, 5).map((t, i) => ({
+    name: t.label,
+    value: t.count,
+    color: COHORT_SLICE_COLORS[i % COHORT_SLICE_COLORS.length],
+  }));
+  const rest = sorted.slice(5);
+  if (rest.length) {
+    slices.push({
+      name: "Other concerns",
+      value: rest.reduce((sum, t) => sum + t.count, 0),
+      color: COHORT_SLICE_COLORS[COHORT_SLICE_COLORS.length - 1],
+    });
+  }
   return (
-    <ul className="mt-4 space-y-3">
-      {top.map((t) => (
-        <li key={t.label}>
-          <div className="flex items-center justify-between gap-3 text-sm">
-            <span className="min-w-0 truncate font-bold text-ink">{t.label}</span>
-            <span className="shrink-0 font-semibold text-ink-muted">
-              {t.count} · {pct(t.count, rows.length)}
-            </span>
-          </div>
-          <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-ink/10">
-            <div
-              className="h-full rounded-full bg-primary-500"
-              style={{ width: `${(t.count / rows.length) * 100}%` }}
-            />
-          </div>
-        </li>
-      ))}
-      <li className="pt-1 text-[13px] text-ink-muted">
+    <>
+      <ReportDonut data={slices} />
+      <p className="mt-3 text-[13px] text-ink-muted">
         Use this ranking to plan group sessions, workshops, and announcements.
-      </li>
-    </ul>
+      </p>
+    </>
   );
 }
 
@@ -536,7 +597,12 @@ function cohortSlices(rows: { cohort: string; screenings: number }[]) {
 }
 
 function CohortStress({ data }: { data: HeadReportsPayload }) {
-  const groups = COHORT_GROUPS.map((g) => ({ ...g, rows: data.cohorts[g.key] ?? [] }));
+  // College cohorts are hidden here — students often share a college, so the
+  // split adds noise without telling the head anything actionable.
+  const groups = COHORT_GROUPS.filter((g) => g.key !== "college").map((g) => ({
+    ...g,
+    rows: data.cohorts[g.key] ?? [],
+  }));
   if (!groups.some((g) => g.rows.length)) {
     return (
       <EmptyState
@@ -551,12 +617,12 @@ function CohortStress({ data }: { data: HeadReportsPayload }) {
       <p className="mt-2 text-[13px] text-ink-muted">
         Cohorts with at least <span className="font-bold text-ink">{MIN_CELL}</span> screenings in this range.
       </p>
-      <div className="mt-4 grid gap-4 md:grid-cols-3">
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
         {groups.map((g) => (
-          <div key={g.key} className="rounded-lg border border-ink/10 bg-cream/40 p-3 dark:bg-transparent">
+          <div key={g.key} className="rounded-lg border border-ink/10 bg-cream/40 p-3">
             <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-faint">{g.label}</p>
             {g.rows.length ? (
-              <ReportDonut data={cohortSlices(g.rows)} />
+              <ReportDonut data={cohortSlices(g.rows)} legend="list" />
             ) : (
               <p className="flex min-h-[200px] items-center justify-center px-4 text-center text-[13px] text-ink-muted">
                 Not enough {g.label.toLowerCase()} data in this range.
@@ -580,75 +646,58 @@ function DataQuality({ data }: { data: HeadReportsPayload }) {
   const rows = [
     {
       label: "Completed sessions without a note",
+      hint: "Write-ups still missing",
       value: String(q.completed_without_note),
-      tone: q.completed_without_note > 0 ? "bg-red-100 text-red-800" : "bg-emerald-100 text-emerald-800",
+      dot: q.completed_without_note > 0 ? "bg-red-500" : "bg-emerald-500",
     },
     {
       label: "Screenings not linked to a session",
+      hint: "PSS-10 results with no visit attached",
       value: String(q.screenings_unlinked),
-      tone: q.screenings_unlinked > 0 ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800",
+      dot: q.screenings_unlinked > 0 ? "bg-amber-500" : "bg-emerald-500",
     },
     {
       label: "Open referrals without a counselor",
+      hint: "Waiting in the unassigned queue",
       value: String(q.referrals_unassigned),
-      tone: q.referrals_unassigned > 0 ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800",
+      dot: q.referrals_unassigned > 0 ? "bg-amber-500" : "bg-emerald-500",
     },
     {
       label: "Feedback coverage",
+      hint: "Sessions with a student rating",
       value: q.feedback_coverage == null ? "—" : `${q.feedback_coverage}%`,
-      tone: "bg-blue-100 text-blue-800",
+      dot: "bg-primary-500",
     },
     {
       label: "Daily summary age",
+      hint: "Last nightly rollup",
       value: q.summary_age_days == null ? "Never run" : `${q.summary_age_days}d old`,
-      tone:
+      dot:
         q.summary_age_days == null || q.summary_age_days > 2
-          ? "bg-amber-100 text-amber-800"
-          : "bg-emerald-100 text-emerald-800",
+          ? "bg-amber-500"
+          : "bg-emerald-500",
     },
   ];
   return (
-    <ul className="mt-4 space-y-3">
-      {rows.map((r) => (
-        <li key={r.label} className="flex items-center justify-between gap-3 rounded-lg bg-cream px-4 py-3">
-          <span className="text-sm font-semibold text-ink-soft">{r.label}</span>
-          <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[13px] font-bold ${r.tone}`}>{r.value}</span>
-        </li>
-      ))}
-      <li className="pt-1 text-[13px] text-ink-muted">
+    <div className="mt-4">
+      <div className="divide-y divide-ink/10 overflow-hidden rounded-xl border border-ink/10 bg-cream/40">
+        {rows.map((r) => (
+          <div key={r.label} className="flex items-center gap-3 px-4 py-3">
+            <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${r.dot}`} />
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-semibold leading-snug text-ink">{r.label}</p>
+              <p className="mt-0.5 text-[10.5px] leading-snug text-ink-muted">{r.hint}</p>
+            </div>
+            <span className="shrink-0 font-display text-lg font-bold leading-none tabular-nums text-ink">
+              {r.value}
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-[13px] text-ink-muted">
         Clear missing notes and unassigned referrals first — they weaken every other report.
-      </li>
-    </ul>
-  );
-}
-
-function DigestPanel({ data }: { data: HeadReportsPayload }) {
-  const digest = data.digest;
-  if (!digest) {
-    return (
-      <EmptyState
-        icon={ClipboardList}
-        title="No digest generated yet"
-        hint="The scheduled digest runs daily once CRON_SECRET is configured."
-      />
-    );
-  }
-  return (
-    <ul className="mt-3 divide-y divide-ink/10">
-      <li className="flex items-center justify-between gap-3 py-2.5 first:pt-0">
-        <span className="text-sm font-semibold text-ink-soft">Period</span>
-        <span className="text-[13px] font-bold text-ink">
-          {fmtDayCompact(digest.period_start.slice(0, 10))} – {fmtDayCompact(digest.period_end.slice(0, 10))}
-        </span>
-      </li>
-      <li className="flex items-center justify-between gap-3 py-2.5">
-        <span className="text-sm font-semibold text-ink-soft">Generated</span>
-        <span className="text-[13px] font-bold text-ink">{timeAgoLong(digest.created_at)}</span>
-      </li>
-      <li className="py-2.5 last:pb-0 text-[13px] leading-relaxed text-ink-muted">
-        Digests are stored in-app and stay head-only. Use Export Excel for the full workbook.
-      </li>
-    </ul>
+      </p>
+    </div>
   );
 }
 
@@ -689,6 +738,14 @@ export function HeadReportsView({
   const loading = isPending || isFetching || !coversSection;
   const showAll = section === "all";
   const scoped = range.from !== null && range.to !== null;
+  const pipelineAttention =
+    !!data && (data.pipeline.unassigned > 0 || data.pipeline.escalated > 0);
+  const qualityAttention =
+    !!data &&
+    !!data.quality &&
+    (data.quality.completed_without_note > 0 ||
+      data.quality.screenings_unlinked > 0 ||
+      data.quality.referrals_unassigned > 0);
 
   /** Deep link into another tab while keeping the current range (and cohort). */
   const hrefFor = (target: ReportSection) => {
@@ -705,23 +762,24 @@ export function HeadReportsView({
   };
 
   return (
-    <div className="space-y-6" aria-busy={isFetching}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 max-w-[560px]">
-        <h1 className="font-display text-2xl font-bold">Reports</h1>
-        </div>
-        <Suspense fallback={<ReportsFiltersSkeleton />}>
-          <ReportsFilters
-            sections={sections}
-            section={section}
-            preset={range.preset}
-            fromDay={rangeDay(range.from)}
-            toDay={rangeDay(range.to)}
-            rangeLabel={range.label}
-            fetching={isFetching}
-          />
-        </Suspense>
-      </div>
+    <div className="space-y-6 lg:-m-4 lg:space-y-0" aria-busy={isFetching}>
+      <div className="flex flex-col gap-6 lg:flex-row lg:gap-0">
+        <div className="order-2 min-w-0 flex-1 space-y-6 lg:order-1 lg:px-6 lg:py-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="font-display text-2xl font-bold">Reports</h1>
+            </div>
+            <Suspense fallback={<ReportsFiltersSkeleton />}>
+              <ReportsFilters
+                section={section}
+                preset={range.preset}
+                fromDay={rangeDay(range.from)}
+                toDay={rangeDay(range.to)}
+                rangeLabel={range.label}
+                fetching={isFetching}
+              />
+            </Suspense>
+          </div>
 
       {isError && !data ? (
         <div className="rounded-lg border border-red-200 bg-red-50 p-5 shadow-card" role="alert">
@@ -733,7 +791,7 @@ export function HeadReportsView({
             type="button"
             onClick={() => refetch()}
             disabled={isFetching}
-            className="mt-3 inline-flex h-8 items-center gap-1.5 rounded bg-red-600 px-4 text-[13px] font-bold text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 disabled:opacity-60"
+            className="mt-3 inline-flex h-6 items-center gap-1.5 rounded-full bg-red-600 px-3 text-[11.5px] font-bold text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 disabled:opacity-60"
           >
             {isFetching && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />}
             {isFetching ? "Retrying…" : "Try again"}
@@ -747,44 +805,18 @@ export function HeadReportsView({
             </div>
           )}
 
-          {showAll && data && !loading && (
-            <>
-              {(data.pipeline.unassigned > 0 || data.pipeline.escalated > 0) && (
-                <AttentionStrip
-                  href={hrefFor("referrals")}
-                  title="Referral pipeline needs attention"
-                  detail={`${data.pipeline.unassigned} waiting without a counselor · ${data.pipeline.escalated} escalated.`}
-                />
-              )}
-              {data.quality &&
-                (data.quality.completed_without_note > 0 ||
-                  data.quality.screenings_unlinked > 0 ||
-                  data.quality.referrals_unassigned > 0) && (
-                  <AttentionStrip
-                    href={hrefFor("quality")}
-                    title="Some records weaken these reports"
-                    detail={`${data.quality.completed_without_note} completed sessions without a note · ${data.quality.screenings_unlinked} unlinked screenings · ${data.quality.referrals_unassigned} referrals without a counselor.`}
-                    tone="blue"
-                  />
-                )}
-            </>
-          )}
-
           {(showAll || section === "sessions") && (
-            <div className={`grid gap-4 sm:grid-cols-2 ${showAll ? "xl:grid-cols-3" : ""}`}>
-              <div className={showAll ? "sm:col-span-2 xl:col-span-3" : "sm:col-span-2"}>
+            <div className={`grid gap-4 sm:grid-cols-2 ${showAll ? "xl:grid-cols-2" : ""}`}>
+              <div className={showAll ? "sm:col-span-2 xl:col-span-2" : "sm:col-span-2"}>
                 <PanelShell
                   title={scoped ? `Sessions — ${range.label}` : "Sessions — last 14 days"}
-                  hint={scoped ? `Daily bookings by scheduled date · ${range.label}.` : "Bookings by scheduled date, including upcoming sessions."}
+                  action={loading || !data ? null : <SessionPeak data={data} range={range} />}
                 >
                   {loading || !data ? <ChartSkeleton /> : <SessionsTrend data={data} range={range} />}
                 </PanelShell>
               </div>
               <PanelShell title="Sessions by status" hint="Where every booked session currently sits." viewAllHref="/appointments">
                 {loading || !data ? <ChartSkeleton /> : <AppointmentStatus data={data} />}
-              </PanelShell>
-              <PanelShell title="Session format" hint="In-person load vs online capacity.">
-                {loading || !data ? <ListSkeleton /> : <SessionMode data={data} />}
               </PanelShell>
               {showAll && (
                 <PanelShell title="Referrals by status" hint="Pipeline health at a glance." viewAllHref="/referrals">
@@ -847,12 +879,9 @@ export function HeadReportsView({
           )}
 
           {(showAll || section === "quality") && (
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4">
               <PanelShell title="Data quality" hint="Gaps that weaken reports and follow-up.">
                 {loading || !data ? <ListSkeleton /> : <DataQuality data={data} />}
-              </PanelShell>
-              <PanelShell title="Latest scheduled digest" hint="In-app snapshot generated by the daily cron.">
-                {loading || !data ? <ListSkeleton /> : <DigestPanel data={data} />}
               </PanelShell>
             </div>
           )}
@@ -869,6 +898,41 @@ export function HeadReportsView({
           )}
         </>
       )}
+        </div>
+
+        <aside className="order-1 flex flex-col gap-3 lg:order-2 lg:sticky lg:top-14 lg:h-[calc(100vh-3.5rem)] lg:w-[224px] lg:shrink-0 lg:self-start lg:overflow-y-auto lg:py-6">
+          <div className="rounded-xl border border-ink/10 bg-white p-3 shadow-card">
+            <Suspense fallback={<ReportsSectionNavSkeleton />}>
+              <ReportsSectionNav
+                sections={sections}
+                section={section}
+                preset={range.preset}
+                fromDay={rangeDay(range.from)}
+                toDay={rangeDay(range.to)}
+              />
+            </Suspense>
+          </div>
+          {showAll && !loading && data && (pipelineAttention || qualityAttention) && (
+            <div className="mt-auto space-y-3">
+              {pipelineAttention && (
+                <AttentionBanner
+                  href={hrefFor("referrals")}
+                  title="Referral pipeline needs attention"
+                  detail={`${data.pipeline.unassigned} waiting without a counselor · ${data.pipeline.escalated} escalated.`}
+                />
+              )}
+              {qualityAttention && data.quality && (
+                <AttentionBanner
+                  href={hrefFor("quality")}
+                  title="Some records weaken these reports"
+                  detail={`${data.quality.completed_without_note} completed sessions without a note · ${data.quality.screenings_unlinked} unlinked screenings · ${data.quality.referrals_unassigned} referrals without a counselor.`}
+                  tone="blue"
+                />
+              )}
+            </div>
+          )}
+        </aside>
+      </div>
     </div>
   );
 }

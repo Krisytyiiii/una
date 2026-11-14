@@ -8,8 +8,8 @@ import { FacultyDashboardView } from "@/components/shared/faculty-dashboard-view
  * Shared /dashboard — one URL, role-aware.
  * Lives in (staff) so counselor + guidance_head + faculty layouts can reach
  * it. All three branches render cached client views with the same data hook
- * pattern — the head sees a dark, landing-style office overview, the counselor
- * sees their personal queue, and faculty see their own referrals.
+ * pattern — the head sees an office-wide overview, the counselor sees their
+ * personal queue, and faculty see their own referrals.
  */
 export default async function DashboardPage() {
   const profile = await getCurrentProfile();

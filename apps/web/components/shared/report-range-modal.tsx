@@ -91,7 +91,7 @@ export function ReportRangeModal({
             autoFocus
             onClick={onClose}
             aria-label="Close date range"
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded text-ink-soft transition hover:bg-cream-dark hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-ink-soft transition hover:bg-cream-dark hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
           >
             <X className="h-5 w-5" aria-hidden />
           </button>

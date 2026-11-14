@@ -11,7 +11,12 @@ import {
 } from "lucide-react";
 import { ReportBars, ReportDonut, ReportTrendChart } from "@/components/shared/reports-charts";
 import { CLASSIFICATIONS } from "@/components/referrals/status";
-import { ReportsFilters, ReportsFiltersSkeleton } from "@/components/shared/reports-filters";
+import {
+  ReportsFilters,
+  ReportsFiltersSkeleton,
+  ReportsSectionNav,
+  ReportsSectionNavSkeleton,
+} from "@/components/shared/reports-filters";
 import { ReportKpiCard, ReportKpiSkeleton, pointDelta, relativeDelta } from "@/components/shared/reports-kpi";
 import { useFacultyReports } from "@/lib/hooks/use-faculty-reports";
 import type { FacultyReportsPayload } from "@/lib/hooks/use-faculty-reports";
@@ -281,28 +286,29 @@ export function FacultyReportsView({
   const unlinked = !loading && (data as { unlinked?: boolean } | undefined)?.unlinked === true;
 
   return (
-    <div className="space-y-6" aria-busy={isFetching}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 max-w-[560px]">
-          <h1 className="font-display text-2xl font-bold">
-            My reports{firstName ? ` — ${firstName}` : ""}
-          </h1>
-          <p className="mt-1 text-sm leading-relaxed text-ink-muted">
-            Every referral you&apos;ve flagged, how it&apos;s moving, and what you flag most.
-          </p>
-        </div>
-        <Suspense fallback={<ReportsFiltersSkeleton />}>
-          <ReportsFilters
-            sections={sections}
-            section={section}
-            preset={range.preset}
-            fromDay={rangeDay(range.from)}
-            toDay={rangeDay(range.to)}
-            rangeLabel={range.label}
-            fetching={isFetching}
-          />
-        </Suspense>
-      </div>
+    <div className="space-y-6 lg:-m-4 lg:space-y-0" aria-busy={isFetching}>
+      <div className="flex flex-col gap-6 lg:flex-row lg:gap-0">
+        <div className="order-2 min-w-0 flex-1 space-y-6 lg:order-1 lg:px-6 lg:py-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 max-w-[560px]">
+              <h1 className="font-display text-2xl font-bold">
+                My reports{firstName ? ` — ${firstName}` : ""}
+              </h1>
+              <p className="mt-1 text-sm leading-relaxed text-ink-muted">
+                Every referral you&apos;ve flagged, how it&apos;s moving, and what you flag most.
+              </p>
+            </div>
+            <Suspense fallback={<ReportsFiltersSkeleton />}>
+              <ReportsFilters
+                section={section}
+                preset={range.preset}
+                fromDay={rangeDay(range.from)}
+                toDay={rangeDay(range.to)}
+                rangeLabel={range.label}
+                fetching={isFetching}
+              />
+            </Suspense>
+          </div>
 
       {unlinked ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-5 shadow-card">
@@ -321,7 +327,7 @@ export function FacultyReportsView({
             type="button"
             onClick={() => refetch()}
             disabled={isFetching}
-            className="mt-3 inline-flex h-8 items-center gap-1.5 rounded bg-red-600 px-4 text-[13px] font-bold text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 disabled:opacity-60"
+            className="mt-3 inline-flex h-6 items-center gap-1.5 rounded-full bg-red-600 px-3 text-[11.5px] font-bold text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 disabled:opacity-60"
           >
             {isFetching && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />}
             {isFetching ? "Retrying…" : "Try again"}
@@ -407,6 +413,22 @@ export function FacultyReportsView({
           {showAll && <FacultyGuide />}
         </>
       )}
+        </div>
+
+        <aside className="order-1 lg:order-2 lg:sticky lg:top-14 lg:w-[224px] lg:shrink-0 lg:self-start lg:pt-6">
+          <div className="rounded-xl border border-ink/10 bg-white p-3 shadow-card">
+            <Suspense fallback={<ReportsSectionNavSkeleton />}>
+              <ReportsSectionNav
+                sections={sections}
+                section={section}
+                preset={range.preset}
+                fromDay={rangeDay(range.from)}
+                toDay={rangeDay(range.to)}
+              />
+            </Suspense>
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }

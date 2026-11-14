@@ -36,9 +36,9 @@ export function Hero() {
             initial="hidden"
             animate="show"
             custom={0}
-            className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-[0.2em] text-blue-100/45"
+            className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-[0.2em] text-ink-muted"
           >
-            <span className="h-px w-6 bg-yellow-400/70" aria-hidden />
+            <span className="h-px w-6 bg-yellow-500" aria-hidden />
             Davao Oriental State University · Guidance &amp; Counseling
           </motion.p>
 
@@ -48,10 +48,10 @@ export function Hero() {
             initial="hidden"
             animate="show"
             custom={1}
-            className="mt-6 max-w-xl text-balance font-display text-[2.6rem] font-semibold leading-[1.06] tracking-[-0.035em] text-white sm:text-6xl lg:text-[4rem]"
+            className="mt-6 max-w-xl text-balance font-display text-[2.6rem] font-semibold leading-[1.06] tracking-[-0.035em] text-ink sm:text-6xl lg:text-[4rem]"
           >
             Counseling that feels{" "}
-            <span className="whitespace-nowrap font-serif font-normal italic text-yellow-300">
+            <span className="whitespace-nowrap font-serif font-normal italic text-blue-600">
               safe to start.
             </span>
           </motion.h1>
@@ -61,7 +61,7 @@ export function Hero() {
             initial="hidden"
             animate="show"
             custom={2}
-            className="mt-6 max-w-xl text-[16px] leading-7 text-blue-100/60"
+            className="mt-6 max-w-xl text-[16px] leading-7 text-ink-muted"
           >
             The Digital Counseling and Appointment System lets DOrSU students
             book sessions in minutes, check in with a PSS-10 stress assessment,
@@ -85,7 +85,7 @@ export function Hero() {
             </a>
             <a
               href="/login"
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-6 text-[15px] font-semibold text-white backdrop-blur transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/[0.08]"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-ink/15 bg-white/80 px-6 text-[15px] font-semibold text-ink backdrop-blur transition hover:-translate-y-0.5 hover:border-blue-300 hover:bg-white"
             >
               Login
               <ArrowUpRight className="h-4 w-4" aria-hidden />
@@ -100,9 +100,9 @@ export function Hero() {
             className="mt-9 flex flex-wrap gap-x-7 gap-y-3 text-sm"
           >
             {TRUST.map(({ icon: Icon, text }) => (
-              <div key={text} className="flex items-center gap-2 text-blue-100/70">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.05]">
-                  <Icon className="h-4 w-4 text-yellow-300" aria-hidden />
+              <div key={text} className="flex items-center gap-2 text-ink-muted">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-ink/10 bg-white/80">
+                  <Icon className="h-4 w-4 text-yellow-600" aria-hidden />
                 </span>
                 <dt className="sr-only">{text}</dt>
                 <dd className="font-semibold">{text}</dd>
@@ -120,12 +120,12 @@ export function Hero() {
         >
           <div
             aria-hidden
-            className="absolute -inset-6 -z-10 rounded-[3rem] bg-[radial-gradient(circle_at_30%_20%,rgba(96,165,250,0.35)_0%,transparent_55%),radial-gradient(circle_at_80%_70%,rgba(251,191,36,0.16)_0%,transparent_55%)] opacity-70 blur-2xl animate-breathe"
+            className="absolute -inset-6 -z-10 rounded-[3rem] bg-[radial-gradient(circle_at_30%_20%,rgba(96,165,250,0.28)_0%,transparent_55%),radial-gradient(circle_at_80%_70%,rgba(251,191,36,0.18)_0%,transparent_55%)] opacity-70 blur-2xl animate-breathe"
           />
           <motion.div
             animate={reduce ? {} : { y: [0, -12, 0] }}
             transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-            className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.04] p-2 shadow-[0_28px_80px_-24px_rgba(0,0,0,0.85)] backdrop-blur"
+            className="relative overflow-hidden rounded-[2rem] border border-ink/10 bg-white/80 p-2 shadow-[0_28px_80px_-32px_rgba(30,58,95,0.35)] backdrop-blur"
           >
             <div className="relative overflow-hidden rounded-[1.6rem]">
               <Image
@@ -136,15 +136,15 @@ export function Hero() {
                 priority
                 className="aspect-[4/3.4] w-full object-cover"
               />
-              <div className="absolute inset-x-3 bottom-3 flex items-center gap-3 rounded-2xl border border-white/10 bg-[#050C16]/80 p-3.5 shadow-card backdrop-blur-xl">
+              <div className="absolute inset-x-3 bottom-3 flex items-center gap-3 rounded-2xl border border-ink/10 bg-white/95 p-3.5 shadow-card backdrop-blur-xl">
                 <span className="relative flex h-3 w-3 shrink-0">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-yellow-400 opacity-60" />
                   <span className="relative inline-flex h-3 w-3 rounded-full bg-yellow-400" />
                 </span>
-                <p className="text-sm font-semibold leading-snug text-white">
+                <p className="text-sm font-semibold leading-snug text-ink">
                   “I booked in 2 minutes — no need to walk in and explain
                   myself at the door.”
-                  <span className="block text-xs font-medium text-blue-100/55">
+                  <span className="block text-xs font-medium text-ink-muted">
                     2nd-year student, anonymous check-in
                   </span>
                 </p>
@@ -156,21 +156,21 @@ export function Hero() {
           <motion.div
             animate={reduce ? {} : { y: [0, -10, 0], rotate: [-1, 1, -1] }}
             transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut" }}
-            className="absolute -left-4 top-8 hidden rounded-2xl border border-white/10 bg-[#07101D]/90 p-3.5 shadow-[0_18px_50px_-20px_rgba(0,0,0,0.9)] backdrop-blur-xl sm:block lg:-left-10"
+            className="absolute -left-4 top-8 hidden rounded-2xl border border-ink/10 bg-white/95 p-3.5 shadow-[0_18px_50px_-24px_rgba(30,58,95,0.35)] backdrop-blur-xl sm:block lg:-left-10"
           >
-            <p className="text-[11px] font-bold uppercase tracking-wider text-yellow-300/80">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-yellow-600">
               PSS-10 check-in
             </p>
-            <p className="font-display text-2xl font-semibold text-white">
+            <p className="font-display text-2xl font-semibold text-ink">
               Moderate{" "}
-              <span className="text-sm font-medium text-blue-100/50">• 18/40</span>
+              <span className="text-sm font-medium text-ink-muted">• 18/40</span>
             </p>
-            <div className="mt-2 h-2 w-36 overflow-hidden rounded-full bg-white/10">
+            <div className="mt-2 h-2 w-36 overflow-hidden rounded-full bg-ink/10">
               <motion.div
                 initial={{ width: 0 }}
                 animate={{ width: "45%" }}
                 transition={{ duration: 1.2, delay: 0.8 }}
-                className="h-full rounded-full bg-blue-500"
+                className="h-full rounded-full bg-blue-400"
               />
             </div>
           </motion.div>
@@ -178,15 +178,15 @@ export function Hero() {
           <motion.div
             animate={reduce ? {} : { y: [0, 10, 0] }}
             transition={{ duration: 6.5, repeat: Infinity, ease: "easeInOut", delay: 0.6 }}
-            className="absolute -right-3 bottom-24 hidden rounded-2xl border border-white/10 bg-[#07101D]/90 p-3.5 shadow-[0_18px_50px_-20px_rgba(0,0,0,0.9)] backdrop-blur-xl sm:block lg:-right-8"
+            className="absolute -right-3 bottom-24 hidden rounded-2xl border border-ink/10 bg-white/95 p-3.5 shadow-[0_18px_50px_-24px_rgba(30,58,95,0.35)] backdrop-blur-xl sm:block lg:-right-8"
           >
-            <p className="text-[11px] font-bold uppercase tracking-wider text-blue-300/80">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600">
               Next session
             </p>
-            <p className="text-sm font-bold text-white">
+            <p className="text-sm font-bold text-ink">
               Thu, 2:00 PM • Google Meet
             </p>
-            <p className="text-xs font-medium text-blue-100/50">
+            <p className="text-xs font-medium text-ink-muted">
               with Counselor M. • Confirmed
             </p>
           </motion.div>

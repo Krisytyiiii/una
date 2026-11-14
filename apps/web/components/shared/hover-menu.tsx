@@ -114,7 +114,7 @@ export function HoverMenu({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={ariaLabel}
-        className="inline-flex h-8 items-center gap-1.5 rounded border border-ink/10 bg-white px-3 text-[13px] font-bold text-ink-soft shadow-card transition hover:border-primary-300 hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
+        className="inline-flex h-6 items-center gap-1.5 rounded-full border border-ink/10 bg-white px-2.5 text-[12px] font-bold text-ink-soft shadow-card transition hover:border-primary-300 hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
       >
         <span className="max-w-44 truncate">{buttonLabel}</span>
         <ChevronDown

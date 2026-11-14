@@ -13,12 +13,15 @@ import { FinalCTA } from "@/components/sections/FinalCTA";
 import { AuthMessageToast } from "@/components/shared/auth-message-toast";
 
 /**
- * Public landing page. Always a calm vertical scroll — the same dark,
- * glass-on-navy visual language as the login and register pages.
+ * Public landing page. Always a calm vertical scroll in the same light,
+ * cream-on-blue visual language as the staff portal.
  */
 export default function Page() {
   return (
-    <div className="relative min-h-screen overflow-x-clip bg-[#050C16] text-white">
+    <div
+      data-light-island
+      className="relative min-h-screen overflow-x-clip bg-[#EFF6FF]"
+    >
       <LandingBackdrop />
       <Suspense>
         <AuthMessageToast />

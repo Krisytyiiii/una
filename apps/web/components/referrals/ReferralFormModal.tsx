@@ -115,7 +115,7 @@ export function ReferralFormModal({
       aria-labelledby="ref-form-title"
     >
       <div aria-hidden className="absolute inset-0 bg-black/40 print:hidden" onClick={onClose} />
-      {/* Paper record: keep this dialog identical to light mode even in dark mode. */}
+      {/* Paper record: keep this dialog on a white sheet with ink text. */}
       <div className="referral-form-light no-scrollbar relative max-h-[90vh] w-full overflow-y-auto rounded-lg bg-white p-4 shadow-card sm:max-w-4xl sm:p-6">
         <div className="mb-3 flex items-start justify-between gap-3 print:hidden">
           <div className="min-w-0">

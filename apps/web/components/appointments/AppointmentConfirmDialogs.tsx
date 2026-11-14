@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/primitives";
 import { CONFIRM_COPY, formatWhen } from "./status";
 import type { ActionKind, Appt } from "./status";
 import { SlotSchedulePicker, type ScheduleSelection } from "./SlotSchedulePicker";
-import type { BoardSlot } from "@/lib/hooks/use-appointments-board";
+import type { BoardBusyWindow, BoardSlot } from "@/lib/hooks/use-appointments-board";
 import { MeetLinkField } from "./MeetLinkField";
 
 /** Minimal record the dialogs read — full board rows satisfy this. */
@@ -20,6 +20,7 @@ export function AppointmentConfirmDialogs({
   confirming,
   aliases,
   slots,
+  busyWindows = [],
   sched,
   onSchedChange,
   scheduleError,
@@ -33,6 +34,8 @@ export function AppointmentConfirmDialogs({
   confirming: { appt: ConfirmAppt; kind: ActionKind } | null;
   aliases: Map<string, string>;
   slots: BoardSlot[];
+  /** Active sessions to keep out of the schedule dropdowns. */
+  busyWindows?: BoardBusyWindow[];
   sched: ScheduleSelection | null;
   onSchedChange: (v: ScheduleSelection) => void;
   scheduleError: string | null;
@@ -52,7 +55,7 @@ export function AppointmentConfirmDialogs({
       aria-labelledby="appt-confirm-title"
       aria-describedby="appt-confirm-desc"
     >
-      <div aria-hidden className="absolute inset-0 bg-black/40 dark:bg-black/70" onClick={onClose} />
+      <div aria-hidden className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="no-scrollbar relative max-h-[90vh] w-full overflow-y-auto rounded-lg bg-white p-6 shadow-card sm:max-w-md">
         <h2 id="appt-confirm-title" className="font-display text-lg font-bold text-ink">
           {CONFIRM_COPY[confirming.kind].title}
@@ -65,7 +68,7 @@ export function AppointmentConfirmDialogs({
         </p>
         {(confirming.kind === "confirm" || confirming.kind === "reschedule") && (
           <div className="mt-3">
-            <SlotSchedulePicker slots={slots} value={sched} onChange={onSchedChange} />
+            <SlotSchedulePicker slots={slots} busyWindows={busyWindows} value={sched} onChange={onSchedChange} />
             {scheduleError ? (
               <p className="mt-1.5 text-xs font-semibold text-red-600">{scheduleError}</p>
             ) : (

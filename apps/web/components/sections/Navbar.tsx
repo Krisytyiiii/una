@@ -26,16 +26,16 @@ export function Navbar() {
       <div className="mx-auto max-w-6xl px-4 pt-4 sm:px-6">
         <nav
           aria-label="Primary"
-          className="flex items-center justify-between gap-2 rounded-full border border-white/10 bg-[#050C16]/70 py-2.5 pl-4 pr-2.5 shadow-[0_18px_50px_-20px_rgba(0,0,0,0.85)] backdrop-blur-xl"
+          className="flex items-center justify-between gap-2 rounded-full border border-ink/10 bg-white/80 py-2.5 pl-4 pr-2.5 shadow-[0_18px_50px_-24px_rgba(30,58,95,0.2)] backdrop-blur-xl"
         >
           <a
             href="#top"
-            className="flex shrink-0 items-center gap-2 text-white"
+            className="flex shrink-0 items-center gap-2 text-ink"
             aria-label="Chekie — back to top"
           >
             <Logo
               subtitle="DOrSU Counseling"
-              subtitleClassName="text-blue-200/50 lg:hidden xl:block"
+              subtitleClassName="text-ink-muted lg:hidden xl:block"
             />
           </a>
 
@@ -44,7 +44,7 @@ export function Navbar() {
               <a
                 key={l.href}
                 href={l.href}
-                className="whitespace-nowrap rounded-full px-2 py-2 text-[13px] font-semibold text-blue-100/65 transition-colors hover:bg-white/[0.06] hover:text-white xl:px-3 xl:text-sm"
+                className="whitespace-nowrap px-2 py-2 text-[13px] font-semibold text-ink-muted underline-offset-4 transition-colors hover:text-blue-600 hover:underline xl:px-3 xl:text-sm"
               >
                 {l.label}
               </a>
@@ -54,7 +54,7 @@ export function Navbar() {
           <div className="hidden shrink-0 items-center gap-2 lg:flex">
             <a
               href="/login"
-              className="rounded-full px-4 py-2 text-[13px] font-semibold text-blue-100/80 transition-colors hover:text-white"
+              className="rounded-full px-4 py-2 text-[13px] font-semibold text-ink-soft transition-colors hover:text-ink"
             >
               Login
             </a>
@@ -67,7 +67,7 @@ export function Navbar() {
           </div>
 
           <button
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.05] text-white transition hover:bg-white/[0.1] lg:hidden"
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-ink/10 bg-white/70 text-ink transition hover:bg-white lg:hidden"
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
             aria-label={open ? "Close menu" : "Open menu"}
@@ -83,14 +83,14 @@ export function Navbar() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.3, ease: "easeOut" }}
-              className="mt-2 rounded-3xl border border-white/10 bg-[#07101D]/95 p-3 shadow-[0_24px_60px_-24px_rgba(0,0,0,0.9)] backdrop-blur-xl lg:hidden"
+              className="mt-2 rounded-3xl border border-ink/10 bg-white/95 p-3 shadow-[0_24px_60px_-24px_rgba(30,58,95,0.28)] backdrop-blur-xl lg:hidden"
             >
               {links.map((l) => (
                 <a
                   key={l.href}
                   href={l.href}
                   onClick={() => setOpen(false)}
-                  className="block rounded-2xl px-4 py-3 text-[15px] font-semibold text-blue-100/70 hover:bg-white/[0.06] hover:text-white"
+                  className="block px-4 py-3 text-[15px] font-semibold text-ink-muted underline-offset-4 transition-colors hover:text-blue-600 hover:underline"
                 >
                   {l.label}
                 </a>
@@ -99,7 +99,7 @@ export function Navbar() {
                 <a
                   href="/login"
                   onClick={() => setOpen(false)}
-                  className="inline-flex h-10 items-center justify-center rounded-full border border-white/15 text-sm font-semibold text-white"
+                  className="inline-flex h-10 items-center justify-center rounded-full border border-ink/15 bg-white text-sm font-semibold text-ink"
                 >
                   Login
                 </a>

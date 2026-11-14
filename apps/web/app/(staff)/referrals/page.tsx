@@ -10,7 +10,7 @@ import {
   patchReferralRow,
   useReferralsBoard,
 } from "@/lib/hooks/use-referrals-board";
-import { clampPage, clampPageSize } from "@/lib/pagination";
+import { clampPage } from "@/lib/pagination";
 import { useMutationAction } from "@/lib/hooks/use-mutation-action";
 import {
   assignReferral,
@@ -52,6 +52,8 @@ const EMPTY_COUNSELORS: { id: string; name: string }[] = [];
 const EMPTY_IDS: string[] = [];
 const EMPTY_READY = new Set<string>();
 const EMPTY_REFERRAL_STATS = { total: 0, pending: 0, assigned: 0, confirmed: 0, resolved: 0, unassigned: 0 };
+/** Twelve cards read as a clean 3 × 4 grid at desktop width. */
+const REFERRALS_PAGE_SIZE = 12;
 
 /**
  * Shared /referrals — same role-separated flow as appointments, different
@@ -90,22 +92,44 @@ function ReferralsPageInner() {
   // stay bookmarkable. Structured filters ride the board query server-side;
   // changing any of them resets to page 1 (cursor chain is filter-keyed).
   const page = clampPage(searchParams.get("page"));
-  // Referrals default to 10 rows per page (the URL still overrides it).
-  const size = clampPageSize(searchParams.get("size") ?? 10);
+  // The referral queue is fixed at 12 cards per page (3 × 4 on wide screens).
+  const size = REFERRALS_PAGE_SIZE;
+  // Pager clicks are optimistic: mark the target page immediately so the
+  // skeleton + pager highlight land on click, without waiting for the router
+  // update that starts the query.
+  const [navTarget, setNavTarget] = useState<number | null>(null);
   const gotoPage = useCallback(
-    (p: number, s: number = size) => {
-      router.replace(`/referrals?page=${p}&size=${s}`, { scroll: false });
+    (p: number) => {
+      if (p === (navTarget ?? page)) return;
+      setNavTarget(p);
+      router.replace(`/referrals?page=${p}`, { scroll: false });
     },
-    [router, size]
+    [router, navTarget, page]
   );
   const filters = useReferralFilters();
-  const { data: board, isLoading, isPlaceholderData, isError, refetch } = useReferralsBoard({
+  const {
+    data: board,
+    isLoading,
+    isFetching,
+    isPlaceholderData,
+    isError,
+    refetch,
+  } = useReferralsBoard({
     page,
     size,
     status: filters.statusFilter,
     priority: filters.priorityFilter,
     assignee: filters.assigneeFilter,
   });
+  // Keep showing skeletons while the target page is still loading, then hand
+  // the pager highlight back to the URL-backed page.
+  useEffect(() => {
+    if (navTarget === null) return;
+    if (page === navTarget && !isFetching) setNavTarget(null);
+  }, [page, navTarget, isFetching]);
+  // Page/filter change in flight — used for the board skeletons and Pager busy.
+  const paging = navTarget !== null || isPlaceholderData;
+  const currentPage = navTarget ?? page;
   // Structured picks reset to page 1 — cursors belong to a filter signature.
   const pickStatus = useCallback(
     (s: string) => {
@@ -131,6 +155,14 @@ function ReferralsPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [gotoPage]
   );
+  // Stat-card "All" resets both status and assignee but keeps search/priority
+  // (same behavior as /appointments' Active card).
+  const pickAll = useCallback(() => {
+    filters.setStatusFilter("all");
+    filters.setAssigneeFilter("all");
+    gotoPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gotoPage]);
   const resetAll = useCallback(() => {
     filters.resetFilters();
     gotoPage(1);
@@ -230,7 +262,7 @@ function ReferralsPageInner() {
         () => rescheduleAppointmentByCounselor(createClient(), appt.id, scheduledAt, endsAt),
         {
           label: "reschedule that session",
-          friendly: /future|valid session|valid date|valid end|after the start|meet link|only assigned|assigned or confirmed|availability|slot|overlap|free window/i,
+          friendly: /future|valid session|valid date|valid end|after the start|meet link|only assigned|assigned or confirmed|availability|slot|overlap|free window|paused|switch bookings/i,
         }
       );
       if (!result.ok) return;
@@ -685,7 +717,8 @@ function ReferralsPageInner() {
       () => assignReferral(createClient(), ref.id, counselorId || null, me),
       {
         label: "assign that referral",
-        friendly: /can't (move|assign|unassign|reject|confirm|resolve|escalate)|unknown counselor/i,
+        friendly:
+          /can't (move|assign|reassign|unassign|reject|confirm|resolve|escalate)|unknown counselor|locked/i,
       }
     );
     if (!result.ok) return;
@@ -775,9 +808,11 @@ function ReferralsPageInner() {
           canSeeActions={canSeeActions}
           loading={loading}
           stats={stats}
+          statusFilter={filters.statusFilter}
+          assigneeFilter={filters.assigneeFilter}
           onPickStatus={pickStatus}
           onPickUnassigned={() => pickAssignee("unassigned")}
-          onReset={resetAll}
+          onReset={pickAll}
         />
       )}
 
@@ -791,24 +826,39 @@ function ReferralsPageInner() {
       )}
 
       {(canTriage || loading) && (
-        <ReferralsBoard
-          loading={loading}
-          fetching={isPlaceholderData}
-          role={role}
-          visible={visible}
-          totalApprox={board?.totalApprox ?? 0}
-          page={page}
-          size={size}
-          hasMore={board?.hasMore ?? false}
-          onPageChange={(p) => gotoPage(p)}
-          searchActive={query.trim().length > 0}
-          aliases={aliases}
-          escalatedAt={escalatedAt}
-          counselors={counselors}
-          filters={viewFilters}
-          onDetails={setDetailRef}
-          onTrack={setTrackRef}
-        />
+        <Card className="overflow-hidden p-0">
+          <ReferralsBoard
+            loading={loading}
+            fetching={paging}
+            role={role}
+            visible={visible}
+            stats={stats}
+            totalApprox={board?.totalApprox ?? 0}
+            page={currentPage}
+            size={size}
+            hasMore={board?.hasMore ?? false}
+            onPageChange={(p) => gotoPage(p)}
+            searchActive={query.trim().length > 0}
+            aliases={aliases}
+            escalatedAt={escalatedAt}
+            sessionSchedule={sessionSchedule}
+            counselors={counselors}
+            filters={viewFilters}
+            busyId={busyId}
+            canAssign={canAssign}
+            canReject={canReject}
+            isCounselor={isCounselor}
+            canSeeActions={canSeeActions}
+            counselorName={counselorName}
+            openMenuKey={filters.openMenuKey}
+            setOpenMenuKey={filters.setOpenMenuKey}
+            onAssign={(ref, id) => void assign(ref, id)}
+            onDetails={setDetailRef}
+            onConfirming={askConfirm}
+            onReschedule={(ref) => void askReschedule(ref)}
+            onClearFilters={resetAll}
+          />
+        </Card>
       )}
 
       {/* Faculty submit */}

@@ -2,8 +2,7 @@
 
 import { useId } from "react";
 import { useReducedMotion } from "framer-motion";
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
-import { useTheme } from "@/components/providers/theme-provider";
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import {
   ChartContainer,
   ChartTooltip,
@@ -13,15 +12,13 @@ import {
 import { cn } from "@/lib/utils";
 
 const chartConfig = {
-  count: { label: "Referrals", color: "#60A5FA" },
+  count: { label: "Referrals", color: "#2563EB" },
 } satisfies ChartConfig;
 
 /**
- * Referral volume over the selected window.
- *
- * Uses the shadcn/ui Recharts area chart so hovering exposes a raised tooltip
- * for every bucket. The palette stays inside the brand blues; the gradient and
- * smooth draw-in match the rest of the dashboard's motion language.
+ * Referral volume for the selected window as a per-day bar chart. Each bar is
+ * one calendar day, so quiet days stay visible instead of being smoothed into
+ * a monthly line. Hovering a bar exposes the shared raised tooltip.
  */
 export function HeadTrendChart({
   points,
@@ -31,8 +28,6 @@ export function HeadTrendChart({
   className?: string;
 }) {
   const reduce = useReducedMotion();
-  const { resolvedTheme } = useTheme();
-  const dark = resolvedTheme === "dark";
   const gradientId = `head-trend-fill-${useId().replace(/:/g, "")}`;
   const total = points.reduce((sum, p) => sum + p.count, 0);
 
@@ -40,12 +35,12 @@ export function HeadTrendChart({
     return (
       <div
         className={cn(
-          "flex min-h-[190px] flex-col items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.02] px-6 text-center",
+          "flex min-h-[190px] flex-col items-center justify-center rounded-lg border border-dashed border-ink/10 bg-cream/40 px-6 text-center",
           className
         )}
       >
-        <p className="text-[13px] font-bold text-white">No referrals in this period</p>
-        <p className="mt-1 max-w-[280px] text-[12px] leading-relaxed text-blue-100/45">
+        <p className="text-[12.5px] font-bold text-ink">No referrals in this period</p>
+        <p className="mt-1 max-w-[280px] text-[11.5px] leading-relaxed text-ink-muted">
           Pick a wider period, or wait for faculty to file the next case.
         </p>
       </div>
@@ -57,25 +52,17 @@ export function HeadTrendChart({
 
   return (
     <div className={cn("relative", className)}>
-      <div role="img" aria-label={`Referrals over time. ${summary}`}>
-        <ChartContainer
-          config={chartConfig}
-          className="aspect-auto h-[190px] w-full overflow-visible"
-        >
-          <AreaChart data={data} margin={{ top: 14, right: 10, left: 10, bottom: 0 }}>
+      <div role="img" aria-label={`Referrals per day. ${summary}`}>
+        <ChartContainer config={chartConfig} className="aspect-auto h-[196px] w-full overflow-visible">
+          <BarChart data={data} margin={{ top: 14, right: 10, left: 10, bottom: 0 }}>
             <defs>
               <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={dark ? "#60A5FA" : "#3B82F6"} stopOpacity={0.42} />
-                <stop offset="60%" stopColor={dark ? "#3B82F6" : "#2563EB"} stopOpacity={0.14} />
-                <stop offset="100%" stopColor={dark ? "#3B82F6" : "#2563EB"} stopOpacity={0} />
+                <stop offset="0%" stopColor="#3B82F6" stopOpacity={0.95} />
+                <stop offset="100%" stopColor="#2563EB" stopOpacity={0.75} />
               </linearGradient>
             </defs>
 
-            <CartesianGrid
-              vertical={false}
-              stroke={dark ? "rgba(255,255,255,0.06)" : "rgba(30,58,95,0.12)"}
-              strokeDasharray="3 5"
-            />
+            <CartesianGrid vertical={false} stroke="rgba(30,58,95,0.10)" strokeDasharray="3 5" />
             <XAxis
               dataKey="label"
               tickLine={false}
@@ -83,52 +70,38 @@ export function HeadTrendChart({
               tickMargin={10}
               interval="preserveStartEnd"
               minTickGap={18}
-              tick={{
-                fill: dark ? "#93C5FD" : "#2D5A8E",
-                fillOpacity: dark ? 0.45 : 0.7,
-                fontSize: 10,
-                fontWeight: 700,
-              }}
+              tick={{ fill: "#5A7FA0", fontSize: 10, fontWeight: 700 }}
             />
-            <YAxis hide domain={[0, "auto"]} />
+            <YAxis hide domain={[0, "auto"]} allowDecimals={false} />
 
             <ChartTooltip
-              cursor={{ stroke: "#3B82F6", strokeOpacity: 0.4, strokeDasharray: "4 4" }}
+              cursor={{ fill: "rgba(37,99,235,0.08)" }}
               wrapperStyle={{ zIndex: 9999, outline: "none" }}
               content={<ChartTooltipContent nameKey="count" />}
             />
 
-            <Area
-              type="monotone"
+            <Bar
               dataKey="count"
               name="Referrals"
-              stroke={dark ? "#60A5FA" : "#2563EB"}
-              strokeWidth={2.5}
-              strokeLinecap="round"
               fill={`url(#${gradientId})`}
-              dot={{ r: 2.5, fill: dark ? "#93C5FD" : "#3B82F6", strokeWidth: 0 }}
-              activeDot={{
-                r: 5,
-                fill: dark ? "#BFDBFE" : "#1D4ED8",
-                stroke: dark ? "#071625" : "#ffffff",
-                strokeWidth: 2,
-              }}
+              radius={[3, 3, 0, 0]}
+              maxBarSize={16}
               isAnimationActive={!reduce}
-              animationDuration={950}
+              animationDuration={700}
               animationEasing="ease-out"
             />
-          </AreaChart>
+          </BarChart>
         </ChartContainer>
       </div>
 
-      <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-[11px] font-medium text-blue-100/40">
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] font-medium text-ink-faint">
         <span>
-          <span className="font-bold text-white">{total.toLocaleString("en-US")}</span> referrals in
-          this window
+          <span className="font-bold text-ink">{total.toLocaleString("en-US")}</span> referrals in this
+          window
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-blue-400" />
-          Hover a point for details
+          <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-primary-500" />
+          Hover a bar for details
         </span>
       </div>
     </div>

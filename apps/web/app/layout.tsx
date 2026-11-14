@@ -1,25 +1,19 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { Poppins, Nunito } from "next/font/google";
+import { Roboto } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "sonner";
 import { cn } from "@/lib/utils";
 import { QueryProvider } from "@/components/providers/query-provider";
-import { ThemeProvider, THEME_STORAGE_KEY } from "@/components/providers/theme-provider";
+import { ThemeProvider } from "@/components/providers/theme-provider";
 import { RoutePendingProvider } from "@/components/shared/route-pending";
 import { RealtimeProvider } from "@/components/shared/realtime-provider";
 
-const poppins = Poppins({
+const roboto = Roboto({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-poppins",
-  display: "swap",
-});
-
-const nunito = Nunito({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
-  variable: "--font-nunito",
+  weight: ["400", "500", "700"],
+  style: ["normal", "italic"],
+  variable: "--font-roboto",
   display: "swap",
 });
 
@@ -42,16 +36,16 @@ export default function RootLayout({
     <html lang="en" className="scroll-smooth" suppressHydrationWarning>
       <body
         className={cn(
-          poppins.variable,
-          nunito.variable,
+          roboto.variable,
           "min-h-screen bg-cream font-body text-ink"
         )}
       >
-        {/* Apply the saved appearance before first paint so dark mode never
-            flashes a light frame. Mirrors ThemeProvider.resolveTheme. */}
+        {/* The app is light-only. Strip any stale `.dark` class or saved
+            preference before first paint so an older build never flashes a
+            navy frame on the way in. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var m=localStorage.getItem("${THEME_STORAGE_KEY}");if(m!=="light"&&m!=="dark"&&m!=="system")m="system";var d=m==="dark"||(m==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches);var r=document.documentElement;r.classList.toggle("dark",d);r.dataset.theme=m;r.style.colorScheme=d?"dark":"light";}catch(e){}})();`,
+            __html: `(function(){try{var r=document.documentElement;r.classList.remove("dark");r.dataset.theme="light";r.style.colorScheme="light";localStorage.removeItem("chekie-theme");}catch(e){}})();`,
           }}
         />
         <a

@@ -28,6 +28,18 @@ export type AuditActor = {
   role: string;
 };
 
+/** Window presets surfaced as segmented controls on the trail page. */
+export type AuditTrailRange = "all" | "24h" | "7d" | "30d";
+
+/** Newest-first is the ledger default; oldest-first helps reconstruct events. */
+export type AuditTrailOrder = "newest" | "oldest";
+
+export type AuditDayBucket = {
+  /** Local calendar date, `YYYY-MM-DD`. */
+  date: string;
+  count: number;
+};
+
 export type AuditTrailData = {
   rows: AuditTrailRow[];
   actors: Map<string, AuditActor>;
@@ -39,6 +51,8 @@ export type AuditTrailData = {
   /** Rows in the whole table (unfiltered). */
   totalAll: number;
   today: number;
+  /** Daily event volume for the last 14 days — powers the hero sparkline. */
+  daily: AuditDayBucket[];
 };
 
 export type AuditTrailFilters = {
@@ -46,15 +60,34 @@ export type AuditTrailFilters = {
   entity: string;
   action: string;
   query: string;
+  range: AuditTrailRange;
+  order: AuditTrailOrder;
 };
 
 export const AUDIT_TRAIL_PAGE_SIZE = 25;
 
 const FACET_ROWS = 1000;
+const DAILY_DAYS = 14;
+const DAILY_ROW_CAP = 2000;
 
 /** PostgREST `or` strings treat these as syntax — keep them out of user input. */
 function sanitizeQuery(input: string): string {
   return input.trim().replace(/[(),]/g, " ").replace(/\s+/g, " ");
+}
+
+/** Local `YYYY-MM-DD` key so day buckets line up with the viewer's clock. */
+function localDayKey(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function rangeStart(range: AuditTrailRange): Date | null {
+  if (range === "all") return null;
+  const d = new Date();
+  if (range === "24h") d.setHours(d.getHours() - 24);
+  if (range === "7d") d.setDate(d.getDate() - 7);
+  if (range === "30d") d.setDate(d.getDate() - 30);
+  return d;
 }
 
 export async function fetchAuditTrail(filters: AuditTrailFilters): Promise<AuditTrailData> {
@@ -73,12 +106,15 @@ export async function fetchAuditTrail(filters: AuditTrailFilters): Promise<Audit
   }
 
   const from = Math.max(0, (filters.page - 1) * AUDIT_TRAIL_PAGE_SIZE);
+  const since = rangeStart(filters.range);
+  const ascending = filters.order === "oldest";
 
   let listQuery = supabase
     .from("audit_logs")
     .select("id, actor_profile_id, action, entity, entity_id, metadata, created_at", { count: "exact" })
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending });
 
+  if (since) listQuery = listQuery.gte("created_at", since.toISOString());
   if (filters.entity !== "all") listQuery = listQuery.eq("entity", filters.entity);
   if (filters.action !== "all") listQuery = listQuery.eq("action", filters.action);
   if (q) {
@@ -90,7 +126,11 @@ export async function fetchAuditTrail(filters: AuditTrailFilters): Promise<Audit
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
 
-  const [listRes, totalRes, todayRes, facetRes] = await Promise.all([
+  const dailyStart = new Date();
+  dailyStart.setHours(0, 0, 0, 0);
+  dailyStart.setDate(dailyStart.getDate() - (DAILY_DAYS - 1));
+
+  const [listRes, totalRes, todayRes, facetRes, dailyRes] = await Promise.all([
     listQuery.range(from, from + AUDIT_TRAIL_PAGE_SIZE - 1),
     supabase.from("audit_logs").select("id", { count: "exact", head: true }),
     supabase
@@ -102,6 +142,12 @@ export async function fetchAuditTrail(filters: AuditTrailFilters): Promise<Audit
       .select("action, entity")
       .order("created_at", { ascending: false })
       .limit(FACET_ROWS),
+    supabase
+      .from("audit_logs")
+      .select("created_at")
+      .gte("created_at", dailyStart.toISOString())
+      .order("created_at", { ascending: false })
+      .limit(DAILY_ROW_CAP),
   ]);
 
   if (listRes.error) throw listRes.error;
@@ -124,6 +170,20 @@ export async function fetchAuditTrail(filters: AuditTrailFilters): Promise<Audit
 
   const facets = (facetRes.data ?? []) as { action: string; entity: string }[];
 
+  // Build complete 14-day buckets (zero-filled) so the sparkline has no gaps.
+  const counts = new Map<string, number>();
+  for (const row of (dailyRes.data ?? []) as { created_at: string }[]) {
+    const key = localDayKey(new Date(row.created_at));
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const daily: AuditDayBucket[] = [];
+  for (let i = 0; i < DAILY_DAYS; i++) {
+    const d = new Date(dailyStart);
+    d.setDate(dailyStart.getDate() + i);
+    const key = localDayKey(d);
+    daily.push({ date: key, count: counts.get(key) ?? 0 });
+  }
+
   return {
     rows,
     actors,
@@ -132,6 +192,7 @@ export async function fetchAuditTrail(filters: AuditTrailFilters): Promise<Audit
     total: listRes.count ?? rows.length,
     totalAll: totalRes.count ?? 0,
     today: todayRes.count ?? 0,
+    daily,
   };
 }
 

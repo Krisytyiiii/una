@@ -279,11 +279,17 @@ export async function GET(request: Request) {
       .gte("scheduled_at", nowIso)
       .order("scheduled_at", { ascending: true })
       .limit(5),
+    // "My referrals" follows the period filter, so the list matches the
+    // referral charts and caseload numbers above it. The action queue below
+    // stays live on purpose: work that needs confirmation must never be
+    // hidden just because it was created outside the selected window.
     supabase
       .from("referrals")
       .select("id, reason, priority, status, student_id, created_at")
       .eq("assigned_counselor_id", counselorId)
       .in("status", [...OPEN_REFERRALS])
+      .gte("created_at", fromIso)
+      .lt("created_at", toIso)
       .order("created_at", { ascending: false })
       .limit(5),
     // Assigned-only referrals needing confirmation (dashboard action queue).

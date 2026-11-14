@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
@@ -65,22 +65,34 @@ export default function AppointmentsPage() {
 
 function AppointmentsPageInner() {
   const qc = useQueryClient();
-  const router = useRouter();
   const searchParams = useSearchParams();
   // Numbered pager state lives in the URL (?page=&size=) so filtered views
-  // stay bookmarkable. Structured filters ride the board query server-side;
-  // changing any of them resets to page 1 (cursor chain is filter-keyed).
-  const page = clampPage(searchParams.get("page"));
+  // stay bookmarkable, but the UI keeps its own copy so a click takes effect
+  // on the very next render. history.replaceState updates the address bar
+  // without a soft navigation — router.replace() queued renders and made
+  // rapid paging feel stuck.
+  const urlPage = clampPage(searchParams.get("page"));
   // Appointments default to 10 rows per page (the URL still overrides it).
-  const size = clampPageSize(searchParams.get("size") ?? 10);
+  const urlSize = clampPageSize(searchParams.get("size") ?? 10);
+  const [page, setPage] = useState(urlPage);
+  const [size, setSize] = useState(urlSize);
+  // Back/forward and deep links still drive the board.
+  useEffect(() => {
+    setPage(urlPage);
+    setSize(urlSize);
+  }, [urlPage, urlSize]);
   const gotoPage = useCallback(
     (p: number, s: number = size) => {
-      router.replace(`/appointments?page=${p}&size=${s}`, { scroll: false });
+      setPage(p);
+      setSize(s);
+      window.history.replaceState(null, "", `/appointments?page=${p}&size=${s}`);
     },
-    [router, size]
+    [size]
   );
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilterState] = useState("all");
+  // Default to active work (pending/assigned/confirmed) so the soonest session
+  // leads the board; completed history stays one status chip away.
+  const [statusFilter, setStatusFilterState] = useState("active");
   const [modeFilter, setModeFilterState] = useState("all");
   const [counselorFilter, setCounselorFilterState] = useState("all");
   const [kindFilter, setKindFilterState] = useState<"appointments" | "followups">("appointments");
@@ -88,6 +100,13 @@ function AppointmentsPageInner() {
   const pickMode = useCallback((m: string) => { setModeFilterState(m); gotoPage(1); }, [gotoPage]);
   const pickCounselor = useCallback((c: string) => { setCounselorFilterState(c); gotoPage(1); }, [gotoPage]);
   const pickKind = useCallback((k: "appointments" | "followups") => { setKindFilterState(k); gotoPage(1); }, [gotoPage]);
+  const clearFilters = useCallback(() => {
+    setQuery("");
+    setStatusFilterState("active");
+    setModeFilterState("all");
+    setCounselorFilterState("all");
+    gotoPage(1);
+  }, [gotoPage]);
   const { data: board, isLoading, isPlaceholderData, isError, refetch } = useAppointmentsBoard({
     page,
     size,
@@ -105,6 +124,7 @@ function AppointmentsPageInner() {
   const headIds = board?.headIds ?? EMPTY_IDS;
   const counselors = board?.counselors ?? EMPTY_COUNSELORS;
   const slots = board?.slots ?? [];
+  const busyWindows = board?.busyWindows ?? [];
   const loading = isLoading && !board;
   // Page/filter/size changes keep the previous page in cache (keepPreviousData),
   // so `isLoading` stays false. Treat those as loading too, otherwise the table
@@ -203,7 +223,7 @@ function AppointmentsPageInner() {
       {
         label,
         friendly:
-          /future|valid session|valid date|valid end|after the start|meet link|database update|migration|meeting_url|only assigned|assigned or confirmed|only pending|unassign|not found|availability|slot|overlap|free window|just taken|already taken|taken|check-in|waiver/i,
+          /future|valid session|valid date|valid end|after the start|meet link|database update|migration|meeting_url|only assigned|assigned or confirmed|only pending|unassign|not found|availability|slot|overlap|free window|just taken|already taken|already has a session|no longer open for assignment|taken|check-in|waiver|paused|switch bookings/i,
       }
     );
     if (!result.ok) return { ok: false, error: result.error };
@@ -240,7 +260,10 @@ function AppointmentsPageInner() {
         // the scope, otherwise the first valid window.
         const seed =
           confirming.kind === "reschedule" ? new Date(confirming.appt.scheduled_at) : null;
-        setSched(defaultSchedule(slots, seed && !Number.isNaN(seed.getTime()) ? seed : null));
+        // The row being edited is active, so drop it from the busy list —
+        // otherwise reopening a reschedule would hide its own current time.
+        const otherBusy = busyWindows.filter((b) => b.id !== confirming.appt.id);
+        setSched(defaultSchedule(slots, seed && !Number.isNaN(seed.getTime()) ? seed : null, otherBusy));
         setScheduleError(null);
         setMeetingInput(confirming.appt.meeting_url ?? "");
         setMeetingError(null);
@@ -256,7 +279,7 @@ function AppointmentsPageInner() {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
-  }, [confirming, slots]);
+  }, [confirming, slots, busyWindows]);
 
   const closeConfirming = () => {
     if (confirmBusyRef.current) return;
@@ -492,20 +515,27 @@ function AppointmentsPageInner() {
 
   return (
     <div className="space-y-4">
-      <AppointmentsHeader role={role} canSeeActions={canSeeActions} loading={loading} stats={stats} onSelectStatus={pickStatus} onSelectCounselor={pickCounselor} />
+      <AppointmentsHeader role={role} canSeeActions={canSeeActions} loading={loading} stats={stats} statusFilter={statusFilter} counselorFilter={counselorFilter} onSelectStatus={pickStatus} onSelectCounselor={pickCounselor} />
 
-      <Tabs value={kindFilter} onValueChange={(v) => pickKind(v as "appointments" | "followups")}>
-        <TabsList aria-label="Session type">
-          <TabsTrigger value="appointments">
-            Appointments{!loading && <span className="ml-1.5 opacity-70">({kindCounts.appointments})</span>}
-          </TabsTrigger>
-          <TabsTrigger value="followups">
-            Follow-up sessions{!loading && <span className="ml-1.5 opacity-70">({kindCounts.followups})</span>}
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Tabs value={kindFilter} onValueChange={(v) => pickKind(v as "appointments" | "followups")}>
+          <TabsList aria-label="Session type">
+            <TabsTrigger value="appointments">
+              Appointments{!loading && <span className="ml-1.5 opacity-70">({kindCounts.appointments})</span>}
+            </TabsTrigger>
+            <TabsTrigger value="followups">
+              Follow-up sessions{!loading && <span className="ml-1.5 opacity-70">({kindCounts.followups})</span>}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <p className="hidden text-[11.5px] font-medium text-ink-faint sm:block">
+          {kindFilter === "appointments"
+            ? "Requests and scheduled sessions — assign, confirm, then close."
+            : "Follow-ups minted from a completed session's private notes."}
+        </p>
+      </div>
 
-      <Card className="p-0">
+      <Card className="overflow-hidden p-0">
         <AppointmentsBoard
           visible={visible} loading={tableLoading}
           query={query} setQuery={setQuery}
@@ -513,18 +543,20 @@ function AppointmentsPageInner() {
           modeFilter={modeFilter} setModeFilter={pickMode}
           counselorFilter={counselorFilter} setCounselorFilter={pickCounselor}
           counselors={counselors} aliases={aliases} role={role}
+          slots={slots}
           busyId={busyId} canAssign={canAssign} canReject={canReject} isCounselor={isCounselor} canSeeActions={canSeeActions}
           counselorName={counselorName} openMenuKey={openMenuKey} setOpenMenuKey={setOpenMenuKey}
           onAssign={handleAssign} onDetail={setDetail} onConfirming={setConfirming}
-          onNotes={setNotesAppt} kindFilter={kindFilter}
+          onNotes={setNotesAppt} onClearFilters={clearFilters} kindFilter={kindFilter}
           page={page} size={size} totalApprox={board?.totalApprox ?? 0} hasMore={board?.hasMore ?? false}
+          statusCounts={{ pending: stats.pending, assigned: stats.assigned, confirmed: stats.confirmed, completed: stats.completed }}
           onPageChange={(p) => gotoPage(p)}
         />
       </Card>
 
       <AppointmentConfirmDialogs
         confirming={confirming} aliases={aliases}
-        slots={slots} sched={sched} onSchedChange={(v) => { setSched(v); setScheduleError(null); }} scheduleError={scheduleError}
+        slots={slots} busyWindows={busyWindows.filter((b) => b.id !== confirming?.appt.id)} sched={sched} onSchedChange={(v) => { setSched(v); setScheduleError(null); }} scheduleError={scheduleError}
         meetingInput={meetingInput} onMeetingChange={(v) => { setMeetingInput(v); setMeetingError(null); }} meetingError={meetingError}
         confirmBusy={confirmBusy} onClose={closeConfirming} onSubmit={runConfirming}
       />

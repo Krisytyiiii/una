@@ -71,12 +71,73 @@ export function priorityTone(p: string): "info" | "success" | "warning" | "dange
   return "success";
 }
 
+/**
+ * Distinct badge hue per referral status/priority — same treatment as the
+ * appointments board (one hue each) so rows stay scannable.
+ */
+export function statusBadgeClass(s: string): string {
+  const base = "inline-flex items-center whitespace-nowrap rounded-full px-3 py-1 text-xs font-bold ring-1 ring-inset";
+  switch (s) {
+    case "pending":
+      return `${base} bg-amber-100 text-amber-800 ring-amber-200`;
+    case "assigned":
+      return `${base} bg-sky-100 text-sky-800 ring-sky-200`;
+    case "confirmed":
+      return `${base} bg-violet-100 text-violet-800 ring-violet-200`;
+    case "resolved":
+      return `${base} bg-emerald-100 text-emerald-800 ring-emerald-200`;
+    case "escalated":
+      return `${base} bg-rose-100 text-rose-700 ring-rose-200`;
+    case "rejected":
+      return `${base} bg-slate-100 text-slate-600 ring-slate-200`;
+    default:
+      return `${base} bg-ink/10 text-ink-muted ring-ink/10`;
+  }
+}
+
+export function priorityBadgeClass(p: string): string {
+  const base = "inline-flex items-center whitespace-nowrap rounded-full px-3 py-1 text-xs font-bold ring-1 ring-inset";
+  switch (p) {
+    case "urgent":
+      return `${base} bg-red-100 text-red-800 ring-red-200`;
+    case "high":
+      return `${base} bg-orange-100 text-orange-800 ring-orange-200`;
+    case "medium":
+      return `${base} bg-blue-100 text-blue-800 ring-blue-200`;
+    case "low":
+      return `${base} bg-slate-100 text-slate-600 ring-slate-200`;
+    default:
+      return `${base} bg-ink/10 text-ink-muted ring-ink/10`;
+  }
+}
+
 /** Re-exported from shared lib — do not redefine locally. */
 import { statusLabel } from "@/lib/format";
 export { statusLabel };
 
+/**
+ * Assignment stays open only while the referral is waiting on the counselor:
+ * pending (pick one) and assigned (reassign before confirmation). Everything
+ * confirmed or later is locked — mirrors REFERRAL_ASSIGNABLE_STATUSES in
+ * @dorsu/shared-services, which enforces the same rule server-side.
+ */
+export const ASSIGNABLE_STATUSES = ["pending", "assigned"] as const;
+
+export function isReferralAssignable(status: string): boolean {
+  return (ASSIGNABLE_STATUSES as readonly string[]).includes(status);
+}
+
+/** Short reason shown where the counselor picker would otherwise appear. */
+export function assignmentLockNote(status: string): string {
+  if (status === "confirmed") return "Confirmed — assignment is locked.";
+  if (status === "resolved") return "Resolved — assignment is locked.";
+  if (status === "rejected") return "Rejected — assignment is locked.";
+  if (status === "escalated") return "Escalated — assignment is locked.";
+  return "In progress — assignment is locked.";
+}
+
 export const HEAD_LEGEND: { icon: typeof Check; label: string; desc: string; variant: "accent" | "outline" }[] = [
-  { icon: Check, label: "Assign", desc: "Pending → assigned", variant: "accent" },
+  { icon: Check, label: "Assign", desc: "Pending → assigned (reassign until confirmed)", variant: "accent" },
   { icon: X, label: "Reject", desc: "Pending → rejected", variant: "outline" },
 ];
 

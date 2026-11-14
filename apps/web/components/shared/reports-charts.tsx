@@ -9,9 +9,16 @@ import dynamic from "next/dynamic";
  * and paint before the chart lib arrives. Skeletons hold the layout.
  */
 
-export type TrendPoint = { day: string; sessions: number };
+export type TrendPoint = { day: string; sessions: number; [key: string]: number | string };
+export type TrendSeries = { key: string; label: string; color: string };
 export type DonutSlice = { name: string; value: number; color: string };
 export type BarPoint = { label: string; value: number; color?: string };
+/** Custom hover copy for a bar: a headline plus a supporting line. */
+export type BarTooltip = (point: BarPoint, total: number) => {
+  title: string;
+  value: string;
+  hint?: string;
+};
 
 function ChartFallback() {
   return <div className="mt-4 h-[240px] animate-pulse rounded-xl bg-ink/5" aria-hidden />;
@@ -30,19 +37,19 @@ export const ReportTrendChart = dynamic<{ data: TrendPoint[] }>(
 );
 
 /** Sessions-per-day line + area trend (headline sessions panel). */
-export const ReportAreaChart = dynamic<{ data: TrendPoint[] }>(
+export const ReportAreaChart = dynamic<{ data: TrendPoint[]; series?: TrendSeries[] }>(
   () => import("./reports-charts-inner").then((m) => m.ReportAreaChart),
   { ...opts, loading: ChartFallback }
 );
 
-/** Generic donut with centered legend (status, mode, stress bands…). */
-export const ReportDonut = dynamic<{ data: DonutSlice[] }>(
+/** Generic donut with a bento legend by default (`legend="list"` for cohorts). */
+export const ReportDonut = dynamic<{ data: DonutSlice[]; legend?: "bento" | "list" }>(
   () => import("./reports-charts-inner").then((m) => m.ReportDonut),
   { ...opts, loading: DonutFallback }
 );
 
 /** Generic vertical bars (rating distribution, referrals by priority…). */
-export const ReportBars = dynamic<{ data: BarPoint[]; barColor?: string }>(
+export const ReportBars = dynamic<{ data: BarPoint[]; barColor?: string; tooltip?: BarTooltip }>(
   () => import("./reports-charts-inner").then((m) => m.ReportBars),
   { ...opts, loading: ChartFallback }
 );
@@ -50,5 +57,15 @@ export const ReportBars = dynamic<{ data: BarPoint[]; barColor?: string }>(
 /** Generic line trend (posts over time, sessions over time…). */
 export const ReportLines = dynamic<{ data: BarPoint[]; stroke?: string }>(
   () => import("./reports-charts-inner").then((m) => m.ReportLines),
+  { ...opts, loading: ChartFallback }
+);
+
+/** Multi-series line trend — one line per status/key, with a shared legend. */
+export const ReportMultiLines = dynamic<{
+  data: { label: string; [key: string]: number | string }[];
+  series: TrendSeries[];
+  height?: number;
+}>(
+  () => import("./reports-charts-inner").then((m) => m.ReportMultiLines),
   { ...opts, loading: ChartFallback }
 );

@@ -51,7 +51,7 @@ export function NextSessionTimer({
       type="button"
       onClick={() => onSelect?.(session)}
       title="View session details"
-      className="group relative flex w-full flex-col gap-2 overflow-hidden rounded-xl border border-red-500/40 bg-gradient-to-br from-red-600 to-red-500 px-4 py-3 text-left text-white shadow-card transition hover:from-red-500 hover:to-red-400 hover:shadow-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+      className="group relative flex w-full flex-col gap-2 overflow-hidden rounded-xl border border-primary-700/30 bg-gradient-to-br from-primary-700 to-primary-500 px-4 py-3 text-left text-white shadow-card transition hover:from-primary-600 hover:to-primary-400 hover:shadow-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
     >
       <span
         aria-hidden

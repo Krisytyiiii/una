@@ -48,6 +48,12 @@ export function useBackupRuns() {
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
     retry: 1,
+    // A run row stays `running` until the export finishes — poll gently so the
+    // page flips to completed/partial without a manual refresh.
+    refetchInterval: (query) => {
+      const runs = query.state.data as BackupRun[] | undefined;
+      return runs?.some((r) => r.status === "running") ? 8000 : false;
+    },
   });
 }
 

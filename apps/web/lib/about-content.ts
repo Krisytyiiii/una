@@ -450,7 +450,7 @@ export const REFERRAL_FLOW: FlowStep[] = [
 export type SplitRow = { move: string; admin: boolean; counselor: boolean; note: string };
 
 export const SPLIT_ROWS: SplitRow[] = [
-  { move: "Assign counselor", admin: true, counselor: false, note: "Pending → assigned (clearing returns to pending)." },
+  { move: "Assign counselor", admin: true, counselor: false, note: "Pending → assigned; reassign while awaiting confirmation (clearing returns to pending). Locked once confirmed." },
   { move: "Reject request", admin: true, counselor: false, note: "Pending → rejected. Terminal (unassign an assigned row first)." },
   { move: "Confirm + schedule", admin: false, counselor: true, note: "Assigned → confirmed. Mints the session row itself (Meet link required when online)." },
   { move: "Complete / No-show", admin: false, counselor: true, note: "Confirmed → completed / no_show. Terminal." },

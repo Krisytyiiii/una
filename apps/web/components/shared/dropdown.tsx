@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type DropdownOption = { value: string; label: string };
+export type DropdownOption = { value: string; label: string; disabled?: boolean };
 
 /**
  * Custom dropdown (button + floating menu) — the app-wide replacement for
@@ -140,16 +140,21 @@ export function Dropdown({
               {options.map((o) => {
                 const active = o.value === value;
                 return (
-                  <li key={o.value || "none"} role="option" aria-selected={active}>
+                  <li key={o.value || "none"} role="option" aria-selected={active} aria-disabled={o.disabled}>
                     <button
                       type="button"
+                      disabled={o.disabled}
                       onClick={() => {
                         onChange(o.value);
                         onOpenChange(null);
                       }}
                       className={cn(
                         "flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors",
-                        active ? "bg-blue-50 font-bold text-primary-700" : "font-medium text-ink hover:bg-cream"
+                        o.disabled
+                          ? "cursor-not-allowed font-medium text-ink-faint"
+                          : active
+                            ? "bg-blue-50 font-bold text-primary-700"
+                            : "font-medium text-ink hover:bg-cream"
                       )}
                     >
                       <span className="truncate">{o.label}</span>

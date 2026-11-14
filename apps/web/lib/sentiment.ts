@@ -14,3 +14,53 @@ export function sentimentOf(avg: number | null): { label: string; tone: "success
   if (avg >= 3.0) return { label: "Fair", tone: "warning", hint: "Mixed signals — review neutral and low comments below." };
   return { label: "Needs attention", tone: "danger", hint: "Satisfaction is low. Work the follow-up list first." };
 }
+
+/** Shape matches the shared `BarTooltip` used by ReportBars. */
+export type RatingInsight = { title: string; value: string; hint: string };
+
+/**
+ * Hover copy for the 1–5★ distribution bars: the count, its share of all
+ * responses, and what that band means for follow-up. Shared by the feedback
+ * page and the head reports view so the wording never drifts.
+ */
+export function ratingBarInsight(
+  point: { label: string; value: number },
+  total: number
+): RatingInsight {
+  const stars = Number(point.label.replace("★", "")) || 0;
+  const share = total ? Math.round((point.value / total) * 100) : 0;
+  const responses = `${point.value} response${point.value === 1 ? "" : "s"} · ${share}% of responses`;
+  if (stars >= 5) {
+    return {
+      title: "5-star · delighted",
+      value: responses,
+      hint: "Best possible score — these are the sessions to learn from.",
+    };
+  }
+  if (stars === 4) {
+    return {
+      title: "4-star · satisfied",
+      value: responses,
+      hint: "Positive experience with room to improve — check what was missing.",
+    };
+  }
+  if (stars === 3) {
+    return {
+      title: "3-star · mixed",
+      value: responses,
+      hint: "Neither positive nor negative — read the written comments.",
+    };
+  }
+  if (stars === 2) {
+    return {
+      title: "2-star · dissatisfied",
+      value: responses,
+      hint: "Low rating — reach out and consider a service review.",
+    };
+  }
+  return {
+    title: "1-star · very dissatisfied",
+    value: responses,
+    hint: "Highest-priority follow-up — contact the student before it escalates.",
+  };
+}

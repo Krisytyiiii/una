@@ -16,6 +16,20 @@ export type ChartMeta = { label: string; color: string };
 export const CHART_PRIMARY = colors.primary[600];
 export const FALLBACK_SLICE = colors.primary[200];
 
+/**
+ * Sessions-over-time lifecycle series (reports Sessions card). Same two-hue
+ * rule as the rest of the palette: blues for active/completed flow, amber for
+ * attention/terminal states.
+ */
+export const SESSION_STATUS_SERIES = [
+  { key: "upcoming", label: "Upcoming", color: colors.primary[500] },
+  { key: "completed", label: "Completed", color: colors.primary[800] },
+  { key: "overdue", label: "Overdue", color: colors.accent[500] },
+  { key: "cancelled", label: "Cancelled", color: colors.primary[200] },
+  { key: "rejected", label: "Rejected", color: colors.accent[600] },
+  { key: "no_show", label: "No-show", color: colors.accent[700] },
+] as const;
+
 export const APPT_STATUS_META: Record<string, ChartMeta> = {
   pending: { label: "Pending", color: colors.accent[400] },
   assigned: { label: "Assigned", color: colors.primary[300] },
@@ -50,6 +64,13 @@ export const STRESS_META: Record<string, ChartMeta> = {
   high: { label: "High", color: colors.accent[700] },
 };
 
+/** Needs-attention signal breakdown (students directory chart). */
+export const ATTENTION_META = {
+  urgent: { label: "Urgent refs", color: colors.accent[700] },
+  high_stress: { label: "High stress", color: colors.accent[500] },
+  repeat_miss: { label: "Repeat misses", color: colors.primary[400] },
+} as const;
+
 /** Official-form case classifications (faculty concern breakdown). */
 export const CONCERN_META: Record<string, ChartMeta> = {
   Behavioral: { label: "Behavioral", color: colors.accent[500] },
@@ -67,6 +88,9 @@ export const MODE_COLORS = {
   in_person: colors.primary[600],
   online: colors.accent[500],
 } as const;
+
+/** Unassigned work queue — attention amber so it reads apart from active blues. */
+export const UNASSIGNED_SLICE_COLOR = colors.accent[500];
 
 /** Ordered slices for cohort breakdowns (programs, year levels, colleges). */
 export const COHORT_SLICE_COLORS = [

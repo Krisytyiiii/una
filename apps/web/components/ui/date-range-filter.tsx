@@ -16,28 +16,6 @@ export type DateRangeSelection = {
 };
 
 const TONE = {
-  dark: {
-    trigger:
-      "border-white/15 bg-white/[0.05] text-white hover:border-white/30 hover:bg-white/[0.09] focus-visible:ring-yellow-300/70",
-    triggerIcon: "text-yellow-300",
-    triggerMuted: "text-blue-100/50",
-    panel:
-      "border-white/10 bg-[#07101D]/95 shadow-[0_28px_80px_-20px_rgba(0,0,0,0.95)] backdrop-blur-xl",
-    heading: "text-blue-100/40",
-    presetActive: "border-yellow-300/40 bg-yellow-400/10 text-yellow-200",
-    presetIdle:
-      "border-white/10 bg-white/[0.03] text-blue-100/60 hover:border-white/20 hover:text-white",
-    customPanel: "border-white/10 bg-white/[0.03]",
-    customLabel: "text-blue-100/50",
-    customValue: "text-blue-100/60",
-    customSeparator: "text-blue-100/30",
-    calendarWrap: "border-white/10 bg-[#07101D]/60",
-    apply:
-      "bg-yellow-400 text-ink hover:bg-yellow-300 focus-visible:ring-yellow-200",
-    clear: "text-yellow-200 hover:text-yellow-100",
-    error: "text-red-300",
-    footer: "text-blue-100/30",
-  },
   light: {
     trigger:
       "border-ink/10 bg-white text-ink-soft shadow-card hover:border-primary-300 hover:text-primary-700 focus-visible:ring-primary-400",
@@ -64,8 +42,8 @@ const TONE = {
 /**
  * Shared date-range filter — the "Stats · <range>" pill and its popover.
  *
- * One implementation serves the dark dashboard hero and the light reports
- * header. Presets apply immediately; "Custom" reveals an inline range
+ * One implementation serves the dashboard header and the reports header.
+ * Presets apply immediately; "Custom" reveals an inline range
  * calendar and an Apply button. The parent owns the applied value and decides
  * what a selection means (dashboard state vs. URL params on /reports).
  */
@@ -99,8 +77,8 @@ export function DateRangeFilter({
   rangeLabel: string;
   /** Shows a spinner in the trigger while the scoped data refetches. */
   pending?: boolean;
-  /** Dark dashboard canvas or light staff-shell surface. */
-  tone?: "dark" | "light";
+  /** Reserved for surface variants; the app is light-only today. */
+  tone?: "light";
   size?: "sm" | "md";
   /** Prefix shown before the range label on wider screens. */
   labelPrefix?: string;
@@ -228,8 +206,7 @@ export function DateRangeFilter({
                   onClick={() => pickPreset(p.key)}
                   aria-pressed={active}
                   className={cn(
-                    "inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border text-[12px] font-bold transition focus-visible:outline-none focus-visible:ring-2",
-                    tone === "dark" ? "focus-visible:ring-yellow-300/70" : "focus-visible:ring-primary-400",
+                    "inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border text-[12px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400",
                     active ? t.presetActive : t.presetIdle
                   )}
                 >
@@ -265,7 +242,6 @@ export function DateRangeFilter({
                 <DateRangeCalendar
                   from={draftFrom}
                   to={draftTo}
-                  tone={tone}
                   disableFuture={disableFuture}
                   onChange={(nextFrom, nextTo) => {
                     setDraftFrom(nextFrom);
@@ -289,8 +265,7 @@ export function DateRangeFilter({
                       setOpen(false);
                     }}
                     className={cn(
-                      "inline-flex h-8 items-center rounded px-2 text-[12px] font-bold transition focus-visible:outline-none focus-visible:ring-2",
-                      tone === "dark" ? "focus-visible:ring-yellow-300/70" : "focus-visible:ring-primary-400",
+                      "inline-flex h-8 items-center rounded px-2 text-[12px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400",
                       t.clear
                     )}
                   >

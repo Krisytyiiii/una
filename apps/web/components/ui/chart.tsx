@@ -6,7 +6,7 @@ import * as RechartsPrimitive from "recharts";
 import { cn } from "@/lib/utils";
 
 /**
- * shadcn/ui chart primitives, adapted to the dark dashboard canvas.
+ * shadcn/ui chart primitives, adapted to the light dashboard canvas.
  *
  * Recharts lives behind `ChartContainer`, which injects one CSS variable per
  * series (`--color-<key>`) so tooltip/legend swatches and marks stay in sync
@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
  * panel stack so it is never clipped or hidden behind neighbouring cards.
  */
 
-const THEMES = { light: "", dark: ".dark" } as const;
+const THEMES = { light: "" } as const;
 
 export type ChartConfig = {
   [k in string]: {
@@ -141,7 +141,7 @@ export const ChartTooltipContent = React.forwardRef<
 
       if (labelFormatter) {
         return (
-          <div className={cn("font-bold text-white", labelClassName)}>
+          <div className={cn("font-bold text-ink", labelClassName)}>
             {labelFormatter(value, payload)}
           </div>
         );
@@ -149,7 +149,7 @@ export const ChartTooltipContent = React.forwardRef<
 
       if (!value) return null;
 
-      return <div className={cn("font-bold text-white", labelClassName)}>{value}</div>;
+      return <div className={cn("font-bold text-ink", labelClassName)}>{value}</div>;
     }, [label, labelFormatter, payload, hideLabel, labelClassName, config, labelKey]);
 
     if (!active || !payload?.length) return null;
@@ -161,7 +161,7 @@ export const ChartTooltipContent = React.forwardRef<
         ref={ref}
         // `z-[9999]` keeps the tooltip above every panel and sticky shell layer.
         className={cn(
-          "relative z-[9999] grid min-w-[9rem] items-start gap-1.5 overflow-hidden rounded-xl border border-white/15 bg-[#071625]/95 px-3 py-2 text-[11px] shadow-[0_22px_60px_-16px_rgba(0,0,0,0.95)] backdrop-blur-xl",
+          "relative z-[9999] grid min-w-[9rem] items-start gap-1.5 overflow-hidden rounded-lg border border-ink/10 bg-white px-3 py-2 text-[11px] shadow-[0_16px_40px_-16px_rgba(15,23,42,0.35)]",
           className
         )}
       >
@@ -218,12 +218,12 @@ export const ChartTooltipContent = React.forwardRef<
                     >
                       <div className="grid gap-1.5">
                         {nestLabel ? tooltipLabel : null}
-                        <span className="text-blue-100/55">
+                        <span className="text-ink-muted">
                           {itemConfig?.label || item.name}
                         </span>
                       </div>
                       {item.value !== undefined && (
-                        <span className="ml-4 font-mono font-bold tabular-nums text-white">
+                        <span className="ml-4 font-mono font-bold tabular-nums text-ink">
                           {typeof item.value === "number"
                             ? item.value.toLocaleString("en-US")
                             : item.value}
@@ -277,7 +277,7 @@ export const ChartLegendContent = React.forwardRef<
         return (
           <div
             key={item.value}
-            className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-100/55"
+            className="flex items-center gap-1.5 text-[11px] font-semibold text-ink-muted"
           >
             {itemConfig?.icon && !hideIcon ? (
               <itemConfig.icon />

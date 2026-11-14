@@ -24,7 +24,12 @@ import {
   fetchAvailabilityBoard,
 } from "@/lib/hooks/use-availability-board";
 import { CHAT_BOARD_KEY, CHAT_BOARD_STALE_MS, fetchChatBoard } from "@/lib/hooks/use-chat-board";
-import { USERS_BOARD_KEY, USERS_BOARD_STALE_MS, fetchUsersBoard } from "@/lib/hooks/use-users-board";
+import {
+  USERS_BOARD_KEY,
+  USERS_BOARD_STALE_MS,
+  DEFAULT_USERS_SCOPE,
+  fetchUsersBoard,
+} from "@/lib/hooks/use-users-board";
 import { STUDENTS_BOARD_KEY, STUDENTS_BOARD_STALE_MS, fetchStudentsBoard } from "@/lib/hooks/use-students-board";
 import { REFERRALS_BOARD_KEY, REFERRALS_BOARD_STALE_MS, fetchReferralsBoard } from "@/lib/hooks/use-referrals-board";
 import { EMERGENCY_BOARD_KEY, EMERGENCY_BOARD_STALE_MS, fetchEmergencyBoard } from "@/lib/hooks/use-emergency-board";
@@ -162,8 +167,15 @@ export function SidebarNavGroups({
   const prefetchUsers = () => {
     if (role !== "guidance_head") return;
     qc.prefetchQuery({
-      queryKey: [...USERS_BOARD_KEY],
-      queryFn: fetchUsersBoard,
+      queryKey: [
+        ...USERS_BOARD_KEY,
+        DEFAULT_USERS_SCOPE.page,
+        DEFAULT_USERS_SCOPE.size,
+        DEFAULT_USERS_SCOPE.role,
+        DEFAULT_USERS_SCOPE.status,
+        DEFAULT_USERS_SCOPE.query,
+      ],
+      queryFn: () => fetchUsersBoard(DEFAULT_USERS_SCOPE),
       staleTime: USERS_BOARD_STALE_MS,
     }).catch(() => {});
   };
@@ -263,8 +275,8 @@ export function SidebarNavGroups({
   const prefetchAppointments = () => {
     if (role !== "counselor" && role !== "guidance_head") return;
     qc.prefetchQuery({
-      queryKey: [...APPOINTMENTS_BOARD_KEY, 1, 10, "all", "all", "all", "appointments"],
-      queryFn: () => fetchAppointmentsBoard({ page: 1, size: 10, status: "all", mode: "all", counselor: "all", kind: "appointments" }),
+      queryKey: [...APPOINTMENTS_BOARD_KEY, 1, 10, "active", "all", "all", "appointments"],
+      queryFn: () => fetchAppointmentsBoard({ page: 1, size: 10, status: "active", mode: "all", counselor: "all", kind: "appointments" }),
       staleTime: APPOINTMENTS_BOARD_STALE_MS,
     }).catch(() => {});
   };
@@ -373,9 +385,9 @@ export function SidebarNavGroups({
       radius={9}
       lineWidth={1.5}
       fontSize={13}
-      color="#DBEAFE"
-      accentColor="#FCD34D"
-      lineColor="rgba(147,197,253,0.22)"
+      color="#1E3A5F"
+      accentColor="#2563EB"
+      lineColor="rgba(30,58,95,0.16)"
       onSelect={handleSelect}
       onHover={prefetchFor}
     />
@@ -399,14 +411,14 @@ export function StaffSidebar({
     <aside
       aria-label="Workspace navigation"
       data-shell-chrome
-      className="hidden w-60 shrink-0 flex-col border-r border-white/10 bg-[#050C16] md:sticky md:top-0 md:flex md:h-screen"
+      className="hidden w-60 shrink-0 flex-col border-r border-ink/10 bg-white md:sticky md:top-0 md:flex md:h-screen"
     >
-      <div className="flex h-14 shrink-0 items-center gap-2 border-b border-white/10 px-4">
+      <div className="flex h-14 shrink-0 items-center gap-2 border-b border-ink/10 px-4">
         <Link href="/" className="flex min-w-0 items-center gap-2" aria-label="Chekie — back to home">
           <ChekieMark size={32} label="Chekie panda mascot" />
           <span className="leading-tight">
-            <span className="block font-display text-[15px] font-semibold text-white">Chekie</span>
-            <span className="block text-[10px] font-bold uppercase tracking-[0.14em] text-blue-100/40">
+            <span className="block font-display text-[15px] font-semibold text-ink">Chekie</span>
+            <span className="block text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">
               Guidance
             </span>
           </span>
@@ -422,18 +434,18 @@ export function StaffSidebar({
 /** Narrow skeleton matching the 240px rail — shown while it streams in. */
 export function StaffSidebarSkeleton() {
   return (
-    <aside aria-hidden data-shell-chrome className="hidden w-60 shrink-0 flex-col border-r border-white/10 bg-[#050C16] md:flex">
-      <div className="h-14 shrink-0 border-b border-white/10 px-4 py-3">
-        <div className="h-8 w-32 animate-pulse rounded-md bg-white/10" />
+    <aside aria-hidden data-shell-chrome className="hidden w-60 shrink-0 flex-col border-r border-ink/10 bg-white md:flex">
+      <div className="h-14 shrink-0 border-b border-ink/10 px-4 py-3">
+        <div className="h-8 w-32 animate-pulse rounded-md bg-ink/10" />
       </div>
       <div className="flex-1 space-y-4 px-3 py-4">
         {[0, 1, 2].map((g) => (
           <div key={g} className="animate-pulse">
-            <div className="h-3 w-20 rounded-full bg-white/10" />
+            <div className="h-3 w-20 rounded-full bg-ink/10" />
             <div className="mt-2 space-y-1.5">
-              <div className="h-8 rounded-md bg-white/10" />
-              <div className="h-8 rounded-md bg-white/10" />
-              <div className="h-8 rounded-md bg-white/10" />
+              <div className="h-8 rounded-md bg-ink/[0.07]" />
+              <div className="h-8 rounded-md bg-ink/[0.07]" />
+              <div className="h-8 rounded-md bg-ink/[0.07]" />
             </div>
           </div>
         ))}

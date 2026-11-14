@@ -49,8 +49,9 @@ export async function fetchCounselorDashboard(
 
 /**
  * Cached counselor dashboard query — stale-while-revalidate, one cache entry
- * per period. `keepPreviousData` means switching Today → Month keeps the old
- * cards on screen (with an "updating" spinner) instead of flashing skeletons.
+ * per period. `keepPreviousData` keeps the cache entry alive while the new
+ * range loads; the view shows its skeleton whenever a fetch is in flight so
+ * the old period's numbers are never mistaken for the new one.
  * The QueryClient lives in the root layout and survives in-app navigation, so
  * the second visit to /dashboard shows cached rows instantly.
  */

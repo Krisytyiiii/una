@@ -249,23 +249,53 @@ export async function triageReferral(
 }
 
 /**
- * Admin assigns (or clears with null) a counselor.
- * pending/assigned + counselor  -> assigned
- * assigned + null               -> pending (unassign)
+ * Head assigns (or clears with null) a counselor.
+ * pending/assigned + counselor  -> assigned (pending assigns, assigned reassigns)
+ * pending/assigned + null       -> pending (unassign)
+ *
+ * Assignment is only open while the referral is still waiting on the
+ * counselor: pending (no counselor yet) and assigned (awaiting confirmation).
+ * Once confirmed — or any later state (escalated/resolved/rejected, plus the
+ * legacy acknowledged/in_progress rows) — the counselor is locked in and the
+ * referral can no longer be reassigned.
  */
+export const REFERRAL_ASSIGNABLE_STATUSES = ["pending", "assigned"] as const;
+
 export async function assignReferral(
   db: DbClient,
   referralId: string,
   counselorId: string | null,
   actorProfileId: string,
 ) {
+  const { data: current, error: curErr } = await db
+    .from("referrals")
+    .select("status")
+    .eq("id", referralId)
+    .single();
+  if (curErr || !current) throw curErr ?? new Error("Referral not found.");
+  const status = (current as { status: string }).status;
+  if (!(REFERRAL_ASSIGNABLE_STATUSES as readonly string[]).includes(status)) {
+    throw new Error(
+      status === "confirmed"
+        ? "Can't reassign a confirmed referral — the counselor is locked in."
+        : "Can't reassign this referral — it is past assignment."
+    );
+  }
+
   if (counselorId) {
     const { data: counselor } = await db
       .from("counselors")
-      .select("id")
+      .select("id, is_available")
       .eq("id", counselorId)
       .maybeSingle();
     if (!counselor) throw new Error("Unknown counselor.");
+    // Same rule as appointment assignment: paused counselors don't take new
+    // referrals until they switch bookings back on.
+    if (!(counselor as { is_available: boolean }).is_available) {
+      throw new Error(
+        "That counselor has paused bookings — pick an available counselor, or ask them to switch bookings back on."
+      );
+    }
     return triageReferral(db, {
       referralId,
       actorProfileId,

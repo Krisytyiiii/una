@@ -1,8 +1,8 @@
-/** Typography scale — Poppins display + Nunito body (matches landing). */
+/** Typography scale — Roboto across display and body. */
 export const typography = {
   fontFamily: {
-    display: ["Poppins", "Nunito", "ui-rounded", "system-ui", "sans-serif"],
-    body: ["Nunito", "ui-rounded", "system-ui", "sans-serif"],
+    display: ["Roboto", "ui-sans-serif", "system-ui", "sans-serif"],
+    body: ["Roboto", "ui-sans-serif", "system-ui", "sans-serif"],
   },
   fontSize: {
     xs: "0.75rem",

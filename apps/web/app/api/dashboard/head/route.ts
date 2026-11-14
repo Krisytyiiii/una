@@ -60,10 +60,6 @@ function addDays(d: Date, days: number): Date {
   return new Date(d.getTime() + days * DAY_MS);
 }
 
-function dayKey(d: Date): string {
-  return `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
-}
-
 function dayLabel(d: Date): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
@@ -354,8 +350,16 @@ export type HeadDashboardPayload = {
     concern: string;
     studentAlias: string;
   }[];
-  announcements: { id: string; title: string; publishedAt: string | null }[];
-  weekChart: { key: string; day: string; sessions: number }[];
+  sessionStatusTrend: {
+    key: string;
+    label: string;
+    upcoming: number;
+    completed: number;
+    overdue: number;
+    no_show: number;
+    cancelled: number;
+    rejected: number;
+  }[];
   fetchedAt: string;
 };
 
@@ -395,7 +399,6 @@ export async function GET(request: Request) {
 
   const today = startOfTodayUTC();
   const tomorrow = addDays(today, 1);
-  const weekAgo = addDays(today, -6);
   const nowIso = new Date().toISOString();
   const weekAhead = addDays(today, 7).toISOString();
 
@@ -408,8 +411,7 @@ export async function GET(request: Request) {
     latestBookings,
     facultyReferrals,
     unassignedAppointments,
-    announcements,
-    weekRows,
+    scheduleRows,
     sessionTrendRows,
     currentStatusRows,
     previousStatusRows,
@@ -453,19 +455,16 @@ export async function GET(request: Request) {
       .is("counselor_id", null)
       .order("created_at", { ascending: false })
       .limit(6),
+    // Sessions scheduled in the selected window, split by lifecycle state so
+    // the head can see upcoming vs completed vs overdue/no-show per day.
     supabase
-      .from("announcements")
-      .select("id, title, published_at")
-      .order("published_at", { ascending: false, nullsFirst: false })
-      .limit(3),
-    // Session bars for the current rolling week (unchanged from before).
-    supabase.rpc("head_appointment_daily_counts", {
-      from_ts: weekAgo.toISOString(),
-      to_ts: tomorrow.toISOString(),
-    }),
+      .from("appointments")
+      .select("scheduled_at, status")
+      .gte("scheduled_at", fromIso)
+      .lt("scheduled_at", toIso)
+      .limit(10000),
     // Sessions booked across the selected window — the trend line beside
-    // Urgency follows the period filter (weekChart below stays the fixed
-    // rolling week).
+    // Urgency follows the period filter.
     supabase.rpc("head_appointment_daily_counts", { from_ts: fromIso, to_ts: toIso }),
     // Referral stats for the selected window + the equal-length previous one.
     supabase.rpc("head_referral_status_counts", { from_ts: fromIso, to_ts: toIso }),
@@ -490,6 +489,55 @@ export async function GET(request: Request) {
       .eq("role", "counselor")
       .eq("is_active", true),
   ]);
+
+  // 00077's analytics helpers can lag behind the repo (they are additive
+  // RPCs, so a deployed project may not have them yet). When either call
+  // fails we derive the same aggregates from the scoped referral rows, so the
+  // trend and split charts never silently disagree with the status counts.
+  let referralDailyRows = (trendRows.data as DailyCountRow[] | null) ?? null;
+  let breakdown = (breakdownRows.data ?? []) as BreakdownRow[];
+
+  if (trendRows.error || breakdownRows.error) {
+    const { data: fallbackData } = await supabase
+      .from("referrals")
+      .select("created_at, status, priority, case_classification")
+      .gte("created_at", fromIso)
+      .lt("created_at", toIso)
+      .limit(5000);
+    const fallbackRows = (fallbackData ?? []) as {
+      created_at: string;
+      status: string | null;
+      priority: string | null;
+      case_classification: string[] | null;
+    }[];
+
+    if (trendRows.error) {
+      const byDay = new Map<string, number>();
+      for (const row of fallbackRows) {
+        const day = row.created_at.slice(0, 10);
+        byDay.set(day, (byDay.get(day) ?? 0) + 1);
+      }
+      referralDailyRows = [...byDay.entries()].map(([day, referrals]) => ({ day, referrals }));
+    }
+
+    if (breakdownRows.error) {
+      const tally = new Map<string, number>();
+      const bump = (dimension: string, key: string | null) => {
+        if (!key) return;
+        const id = `${dimension}\u0000${key}`;
+        tally.set(id, (tally.get(id) ?? 0) + 1);
+      };
+      for (const row of fallbackRows) {
+        bump("status", row.status);
+        bump("priority", row.priority);
+        for (const key of row.case_classification ?? []) bump("classification", key);
+      }
+      breakdown = [...tally.entries()].map(([id, count]) => {
+        const [dimension, key] = id.split("\u0000");
+        return { dimension, key, count };
+      });
+    }
+  }
 
   const bookingRows = (latestBookings.data ?? []) as AppointmentFeedRow[];
   const unassignedRows = (unassignedAppointments.data ?? []) as AppointmentFeedRow[];
@@ -539,16 +587,52 @@ export async function GET(request: Request) {
     }
   }
 
-  const buckets = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(weekAgo.getTime() + i * DAY_MS);
-    return { key: dayKey(d), day: dayLabel(d), sessions: 0 };
-  });
-  const byKey = new Map(buckets.map((b) => [b.key, b]));
-  for (const row of ((weekRows.data ?? []) as { day: string; sessions: number | string }[])) {
-    if (!row?.day) continue;
-    const b = byKey.get(dayKey(new Date(row.day)));
-    if (b) b.sessions += Number(row.sessions ?? 0);
+  // Per-day session counts split by lifecycle state. Upcoming/overdue are
+  // derived from the scheduled time (a still-active appointment whose slot has
+  // passed is overdue), while terminal states use their stored status.
+  const sessionStatusBuckets = new Map<
+    string,
+    { upcoming: number; completed: number; overdue: number; no_show: number; cancelled: number; rejected: number }
+  >();
+  const sessionDays: { key: string; label: string }[] = [];
+  for (let d = new Date(range.from); d < range.to; d = addDays(d, 1)) {
+    const key = isoDay(d);
+    sessionDays.push({ key, label: dayLabel(d) });
+    sessionStatusBuckets.set(key, {
+      upcoming: 0,
+      completed: 0,
+      overdue: 0,
+      no_show: 0,
+      cancelled: 0,
+      rejected: 0,
+    });
   }
+
+  const nowMs = Date.now();
+  for (const row of (scheduleRows.data ?? []) as { scheduled_at: string; status: string }[]) {
+    const at = new Date(row.scheduled_at);
+    if (Number.isNaN(at.getTime())) continue;
+    const bucket = sessionStatusBuckets.get(isoDay(at));
+    if (!bucket) continue;
+    if (row.status === "completed") bucket.completed += 1;
+    else if (row.status === "cancelled") bucket.cancelled += 1;
+    else if (row.status === "rejected") bucket.rejected += 1;
+    else if (row.status === "no_show") bucket.no_show += 1;
+    else if (at.getTime() < nowMs) bucket.overdue += 1;
+    else bucket.upcoming += 1;
+  }
+
+  const sessionStatusTrend = sessionDays.map((day) => ({
+    ...day,
+    ...(sessionStatusBuckets.get(day.key) ?? {
+      upcoming: 0,
+      completed: 0,
+      overdue: 0,
+      no_show: 0,
+      cancelled: 0,
+      rejected: 0,
+    }),
+  }));
 
   const currentStatus = toCountMap(currentStatusRows.data as StatusCountRow[] | null);
   const previousStatus = toCountMap(previousStatusRows.data as StatusCountRow[] | null);
@@ -563,7 +647,6 @@ export async function GET(request: Request) {
   const previousAssigned = sum(previousStatus, ["assigned", "acknowledged", "in_progress"]);
   const previousResolved = previousStatus.get("resolved") ?? 0;
 
-  const breakdown = (breakdownRows.data ?? []) as BreakdownRow[];
   const byStatus = STATUS_ORDER.filter((key) => (currentStatus.get(key) ?? 0) > 0).map((key) => ({
     key,
     name: STATUS_META[key]?.label ?? key,
@@ -605,7 +688,9 @@ export async function GET(request: Request) {
         activeCounselors: activeCounselors.error ? null : (activeCounselors.count ?? 0),
       },
     },
-    referralTrend: trendRows.error ? [] : bucketTrend(trendRows.data as DailyCountRow[] | null, range),
+    // The head wants a per-day bar series, so force day buckets even when the
+    // selected range is long enough for the other charts to group by month.
+    referralTrend: bucketTrend(referralDailyRows, { ...range, bucket: "day" }),
     sessionTrend: sessionTrendRows.error
       ? []
       : bucketTrend(
@@ -655,14 +740,7 @@ export async function GET(request: Request) {
           concern: a.concern,
           studentAlias: aliasOf(a),
         })),
-    announcements: announcements.error
-      ? []
-      : (((announcements.data ?? []) as { id: string; title: string; published_at: string | null }[]).map((a) => ({
-          id: a.id,
-          title: a.title,
-          publishedAt: a.published_at,
-        }))),
-    weekChart: weekRows.error ? [] : buckets,
+    sessionStatusTrend,
     fetchedAt: new Date().toISOString(),
   };
 

@@ -109,7 +109,7 @@ export function ReferralTrackingModal({
         type="button"
         aria-label="Close tracking"
         onClick={onClose}
-        className="absolute inset-0 bg-black/40 dark:bg-black/70"
+        className="absolute inset-0 bg-black/40"
       />
       <div className="no-scrollbar relative max-h-[90vh] w-full overflow-y-auto rounded-lg bg-white p-6 shadow-card sm:max-w-lg">
         <div className="flex items-start justify-between gap-2">
@@ -123,7 +123,7 @@ export function ReferralTrackingModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded text-ink-soft transition hover:bg-cream-dark hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-ink-soft transition hover:bg-cream-dark hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
           >
             <X className="h-4 w-4" aria-hidden />
           </button>
@@ -169,7 +169,7 @@ export function ReferralTrackingModal({
                   )}
                   <span
                     aria-hidden
-                    className={`mt-1.5 h-[11px] w-[11px] shrink-0 rounded-full ring-2 ring-white dark:ring-[#0b1726] ${
+                    className={`mt-1.5 h-[11px] w-[11px] shrink-0 rounded-full ring-2 ring-white ${
                       e.kind === "rescheduled" ? "bg-accent-500" : "bg-primary-600"
                     }`}
                   />
@@ -209,7 +209,7 @@ export function ReferralTrackingModal({
                 )}
                 <span
                   aria-hidden
-                  className={`mt-1.5 h-[11px] w-[11px] shrink-0 rounded-full ring-2 ring-white dark:ring-[#0b1726] ${
+                  className={`mt-1.5 h-[11px] w-[11px] shrink-0 rounded-full ring-2 ring-white ${
                     i === 0 ? "bg-primary-600" : "bg-ink/25"
                   }`}
                 />

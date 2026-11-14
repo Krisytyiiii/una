@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Clock, TrendingUp, Video } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useSessionsCalendar, SESSIONS_CALENDAR_KEY, type CalendarSession, type SessionsCalendarData } from "@/lib/hooks/use-sessions-calendar";
 import { APPOINTMENTS_BOARD_KEY } from "@/lib/hooks/use-appointments-board";
@@ -11,20 +11,20 @@ import { COUNSELOR_DASHBOARD_KEY } from "@/lib/hooks/use-counselor-dashboard";
 import { useMutationAction } from "@/lib/hooks/use-mutation-action";
 import { patchBoard } from "@/lib/patch-board";
 import { notifyStaff } from "@/lib/notify";
-import { MONTHS, dayKey, isSessionLive, startOfDay, weekDays } from "@/lib/calendar";
+import { MONTHS, dayKey, isSessionLive, monthCells, sameDay, sessionPhase, startOfDay, weekDays } from "@/lib/calendar";
 import { Button, Card } from "@/components/ui/primitives";
 import { DateRangeFilter, type DateRangeSelection } from "@/components/ui/date-range-filter";
-import { useTheme } from "@/components/providers/theme-provider";
 import { cn } from "@/lib/utils";
 import { ACTION_DEFS, formatWhen, type ActionKind } from "@/components/appointments/status";
 import { AppointmentConfirmDialogs } from "@/components/appointments/AppointmentConfirmDialogs";
 import { SessionNotesModal } from "@/components/appointments/SessionNotesModal";
 import { MonthGrid } from "@/components/sessions/month-grid";
 import { WeekStrip } from "@/components/sessions/week-strip";
-import { LiveSessionBanner, NextSessionTimer } from "@/components/sessions/next-session-timer";
 import { DayOverlay } from "@/components/sessions/day-overlay";
+import { SessionsSidebar } from "@/components/sessions/sessions-sidebar";
 
 type View = "month" | "week";
+type ModeFilter = "all" | "online" | "in_person";
 
 /** Same period presets as the guidance-head dashboard filter. */
 const PERIOD_PRESETS = [
@@ -32,6 +32,12 @@ const PERIOD_PRESETS = [
   { key: "week", label: "This week" },
   { key: "month", label: "This month" },
   { key: "custom", label: "Custom" },
+];
+
+const MODE_FILTERS: { key: ModeFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "in_person", label: "In person" },
+  { key: "online", label: "Online" },
 ];
 
 const EMPTY_MAP = new Map<string, string>();
@@ -64,7 +70,6 @@ function isoDayLabel(iso: string): string {
  */
 export default function SessionCalendarPage() {
   const qc = useQueryClient();
-  const { resolvedTheme } = useTheme();
   const { data: calendar, isLoading, isError, refetch } = useSessionsCalendar();
   const { busyId, run: runMutation } = useMutationAction();
   const role = calendar?.role ?? null;
@@ -76,9 +81,10 @@ export default function SessionCalendarPage() {
   const headIds = calendar?.headIds ?? [];
   const slots = calendar?.slots ?? [];
   const loading = isLoading && !calendar;
-  const tone = resolvedTheme === "dark" ? "dark" : "light";
+  const tone = "light" as const;
   const [range, setRange] = useState<DateRangeSelection>({ preset: "month", from: "", to: "" });
   const [view, setView] = useState<View>("month");
+  const [modeFilter, setModeFilter] = useState<ModeFilter>("all");
   const [cursor, setCursor] = useState(() => new Date());
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
   const [overlayOpen, setOverlayOpen] = useState(false);
@@ -121,9 +127,16 @@ export default function SessionCalendarPage() {
     [rows, role, counselorId]
   );
 
+  // Mode filter is a view-only lens: it changes the grid, rail counts, and
+  // day overlay, but never alerts/live detection (which stay office truth).
+  const modeFiltered = useMemo(
+    () => (modeFilter === "all" ? visible : visible.filter((s) => s.mode === modeFilter)),
+    [visible, modeFilter]
+  );
+
   const byDay = useMemo(() => {
     const map = new Map<string, CalendarSession[]>();
-    for (const s of visible) {
+    for (const s of modeFiltered) {
       const k = dayKey(new Date(s.scheduled_at));
       const arr = map.get(k) ?? [];
       arr.push(s);
@@ -133,9 +146,46 @@ export default function SessionCalendarPage() {
       arr.sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
     }
     return map;
-  }, [visible]);
+  }, [modeFiltered]);
 
   const today = useMemo(() => new Date(), []);
+
+  const todaySessions = useMemo(
+    () =>
+      modeFiltered
+        .filter((s) => sameDay(new Date(s.scheduled_at), today))
+        .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()),
+    [modeFiltered, today]
+  );
+
+  // Sessions inside the period the calendar is showing — powers the hero
+  // stats and the busiest-days rail without querying anything extra.
+  const scopedSessions = useMemo(() => {
+    const days = view === "month" ? monthCells(cursor) : weekDays(cursor);
+    const keys = new Set(days.map(dayKey));
+    return modeFiltered.filter((s) => keys.has(dayKey(new Date(s.scheduled_at))));
+  }, [modeFiltered, view, cursor]);
+
+  const busiestDays = useMemo(() => {
+    const counts = new Map<string, { date: Date; count: number }>();
+    for (const s of scopedSessions) {
+      const d = startOfDay(new Date(s.scheduled_at));
+      const k = dayKey(d);
+      const entry = counts.get(k);
+      if (entry) entry.count += 1;
+      else counts.set(k, { date: d, count: 1 });
+    }
+    return [...counts.values()]
+      .sort((a, b) => b.count - a.count || a.date.getTime() - b.date.getTime())
+      .slice(0, 3)
+      .map((entry) => ({
+        date: entry.date,
+        count: entry.count,
+        label: entry.date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
+      }));
+  }, [scopedSessions]);
+
+  const onlineInScope = scopedSessions.filter((s) => s.mode === "online").length;
 
   const selectedSessions = byDay.get(dayKey(selectedDay)) ?? [];
   const selected = selectedId ? visible.find((s) => s.id === selectedId) ?? null : null;
@@ -162,6 +212,16 @@ export default function SessionCalendarPage() {
     }
     return best;
   }, [visible, now]);
+
+  // Confirmed sessions whose end time has passed but that were never closed.
+  // They stay on the calendar, but need a nudge so no session is left dangling.
+  const needsClosing = useMemo(
+    () =>
+      visible
+        .filter((s) => sessionPhase(s.scheduled_at, s.ends_at, now) === "past")
+        .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()),
+    [visible, now]
+  );
 
   const isCounselor = role === "counselor";
 
@@ -341,6 +401,39 @@ export default function SessionCalendarPage() {
           ? `${isoDayLabel(range.from)} – ${isoDayLabel(range.to)}`
           : "This month";
 
+  const periodLabel = view === "month" ? "This month" : "This week";
+  const modeLabel =
+    modeFilter === "all" ? "all modes" : modeFilter === "online" ? "online only" : "in person only";
+  const onlineShare = scopedSessions.length
+    ? Math.round((onlineInScope / scopedSessions.length) * 100)
+    : 0;
+  const heroStats = [
+    {
+      label: periodLabel,
+      value: String(scopedSessions.length),
+      hint: modeLabel,
+      icon: CalendarDays,
+    },
+    {
+      label: "Today",
+      value: String(todaySessions.length),
+      hint: today.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
+      icon: Clock,
+    },
+    {
+      label: "Online",
+      value: String(onlineInScope),
+      hint: `${onlineShare}% of ${periodLabel.toLowerCase()}`,
+      icon: Video,
+    },
+    {
+      label: "Busiest",
+      value: busiestDays[0]?.date.toLocaleDateString("en-US", { weekday: "short" }) ?? "—",
+      hint: busiestDays[0] ? `${busiestDays[0].count} session${busiestDays[0].count === 1 ? "" : "s"}` : "nothing yet",
+      icon: TrendingUp,
+    },
+  ];
+
   if (!loading && (!role || !["counselor", "guidance_head"].includes(role))) {
     return (
       <div className="space-y-4">
@@ -357,6 +450,7 @@ export default function SessionCalendarPage() {
     today,
     selectedDay,
     selectedId,
+    now,
     onPickDay: pickDay,
     onPickSession: pickSession,
     onExpandDay: expandDay,
@@ -364,147 +458,231 @@ export default function SessionCalendarPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="font-display text-2xl font-bold">Session calendar</h1>
-        </div>
-
-        {/* Same period filter as the dashboard/reports, plus the compact
-            next-session card docked in the top-right. */}
-        <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:items-end">
-          <DateRangeFilter
-            presets={PERIOD_PRESETS}
-            preset={range.preset}
-            from={range.from}
-            to={range.to}
-            rangeLabel={rangeLabel}
-            tone={tone}
-            size="sm"
-            labelPrefix="Period"
-            dialogLabel="Calendar period"
-            customDefaults={{ from: isoDay(-29), to: isoDay() }}
-            footer="Jumps the calendar to the selected period. Every date stays browsable."
-            onApply={applyPeriod}
-          />
-          {(liveSession || nextSession) && (
-            <div className="w-full sm:w-[300px]">
-              {liveSession ? (
-                <LiveSessionBanner
-                  session={liveSession}
-                  alias={
-                    liveSession.student_id
-                      ? (aliases.get(liveSession.student_id) ?? "Student")
-                      : "Walk-in"
-                  }
-                  onSelect={pickSession}
-                />
-              ) : (
-                nextSession && (
-                  <NextSessionTimer
-                    session={nextSession}
-                    alias={
-                      nextSession.student_id
-                        ? (aliases.get(nextSession.student_id) ?? "Student")
-                        : "Walk-in"
-                    }
-                    onSelect={pickSession}
-                  />
-                )
-              )}
+      {/* Hero + period filter */}
+      <section className="relative overflow-hidden rounded-2xl border border-primary-100 bg-gradient-to-br from-white via-cream to-blue-50 p-5 shadow-card sm:p-6">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-primary-200/40 blur-2xl"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -bottom-24 right-24 h-48 w-48 rounded-full bg-accent-200/30 blur-2xl"
+        />
+        <div className="relative flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0">
+            <p className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[0.2em] text-primary-700">
+              <CalendarDays className="h-3.5 w-3.5" aria-hidden />
+              Schedule
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <h1 className="font-display text-2xl font-bold text-ink sm:text-3xl">Session calendar</h1>
+              <span className="inline-flex items-center gap-1 rounded-full border border-primary-200 bg-white/80 px-2.5 py-1 text-[11px] font-bold text-primary-700">
+                <Clock className="h-3 w-3" aria-hidden />
+                {isCounselor ? "Counselor view" : "Office view"}
+              </span>
             </div>
-          )}
-        </div>
-      </div>
+            <p className="mt-1.5 max-w-[640px] text-[13px] leading-relaxed text-ink-muted">
+              {isCounselor
+                ? "Your confirmed sessions, month by month — open any day for its schedule, then complete or mark no-show right from the detail card."
+                : "Every counselor's confirmed sessions on one calendar — open any day to review coverage, details, and links."}
+            </p>
 
-      {/* Full-width calendar — the schedule itself lives in the day overlay. */}
-      <section className="overflow-hidden rounded-lg border border-ink/10 bg-white shadow-card">
-        <div className="flex flex-col gap-3 border-b border-ink/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Button size="sm" variant="outline" onClick={goToday}>
-              Today
-            </Button>
-            <div className="inline-flex overflow-hidden rounded-lg border border-ink/15 bg-white">
-              <button
-                type="button"
-                aria-label="Previous period"
-                onClick={() => step(-1)}
-                className="inline-flex h-8 w-8 items-center justify-center border-r border-ink/10 text-ink transition-colors hover:bg-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
-              >
-                <ChevronLeft className="h-4 w-4" aria-hidden />
-              </button>
-              <button
-                type="button"
-                aria-label="Next period"
-                onClick={() => step(1)}
-                className="inline-flex h-8 w-8 items-center justify-center text-ink transition-colors hover:bg-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
-              >
-                <ChevronRight className="h-4 w-4" aria-hidden />
-              </button>
-            </div>
-            <h2 className="ml-1 font-display text-lg font-bold text-ink">{title}</h2>
-          </div>
-
-          <div className="flex items-center justify-between gap-3 sm:justify-end">
-            <span className="hidden items-center gap-1.5 text-xs font-semibold text-ink-faint sm:inline-flex">
-              <CalendarDays className="h-4 w-4" aria-hidden /> {visible.length} sessions
-            </span>
-            <div
-              className="flex rounded-lg border border-ink/15 bg-white p-1 shadow-card"
-              role="tablist"
-              aria-label="Calendar view"
-            >
-              {(["month", "week"] as View[]).map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  role="tab"
-                  aria-selected={view === v}
-                  onClick={() => setView(v)}
-                  className={cn(
-                    "h-7 rounded-md px-4 text-[13px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400",
-                    view === v
-                      ? "bg-primary-600 text-white shadow-soft"
-                      : "text-ink-soft hover:bg-cream"
-                  )}
+            <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+              {heroStats.map((stat) => (
+                <div
+                  key={stat.label}
+                  className="rounded-xl border border-white/70 bg-white/70 px-3.5 py-2.5 backdrop-blur"
                 >
-                  {v.charAt(0).toUpperCase() + v.slice(1)}
-                </button>
+                  <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-muted">
+                    <stat.icon className="h-3 w-3 text-primary-600" aria-hidden />
+                    {stat.label}
+                  </p>
+                  <p className="mt-1 font-display text-xl font-bold leading-none tabular-nums text-ink">
+                    {stat.value}
+                  </p>
+                  <p className="mt-1 truncate text-[10.5px] text-ink-faint">{stat.hint}</p>
+                </div>
               ))}
             </div>
           </div>
-        </div>
 
-        <div className="p-3 sm:p-5">
-          {loading ? (
-            <div className="animate-pulse" aria-hidden>
-              <div className="grid grid-cols-7 gap-1.5">
-                {Array.from({ length: 7 }).map((_, i) => (
-                  <div key={`h-${i}`} className="h-4 rounded-full bg-ink/10" />
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
+            <DateRangeFilter
+              presets={PERIOD_PRESETS}
+              preset={range.preset}
+              from={range.from}
+              to={range.to}
+              rangeLabel={rangeLabel}
+              tone={tone}
+              size="sm"
+              labelPrefix="Period"
+              dialogLabel="Calendar period"
+              customDefaults={{ from: isoDay(-29), to: isoDay() }}
+              footer="Jumps the calendar to the selected period. Every date stays browsable."
+              onApply={applyPeriod}
+            />
+          </div>
+        </div>
+      </section>
+
+      {needsClosing.length > 0 && (
+        <div className="flex flex-col gap-3 rounded-xl border border-accent-300 bg-accent-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-2.5">
+            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-200 text-accent-700">
+              <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[13px] font-bold text-ink">
+                {needsClosing.length} confirmed session{needsClosing.length === 1 ? "" : "s"} need an outcome
+              </p>
+              <p className="mt-0.5 text-[12px] leading-relaxed text-ink-muted">
+                {isCounselor
+                  ? "Their time has passed but they're still open. Complete or mark no-show so reports stay accurate."
+                  : "Their time has passed but they're still open. Review them and follow up with the counselor to close."}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => pickSession(needsClosing[0])}
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 self-start rounded-lg bg-accent-600 px-3 text-[12px] font-bold text-white shadow-soft transition hover:bg-accent-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 sm:self-auto"
+          >
+            Review oldest
+            <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+          </button>
+        </div>
+      )}
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+        {/* Calendar — the schedule itself lives in the day overlay. */}
+        <section className="overflow-hidden rounded-xl border border-ink/10 bg-white shadow-card">
+          <div className="flex flex-col gap-3 border-b border-ink/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Button size="sm" variant="outline" onClick={goToday}>
+                Today
+              </Button>
+              <div className="inline-flex overflow-hidden rounded-lg border border-ink/15 bg-white">
+                <button
+                  type="button"
+                  aria-label="Previous period"
+                  onClick={() => step(-1)}
+                  className="inline-flex h-8 w-8 items-center justify-center border-r border-ink/10 text-ink transition-colors hover:bg-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
+                >
+                  <ChevronLeft className="h-4 w-4" aria-hidden />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Next period"
+                  onClick={() => step(1)}
+                  className="inline-flex h-8 w-8 items-center justify-center text-ink transition-colors hover:bg-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
+                >
+                  <ChevronRight className="h-4 w-4" aria-hidden />
+                </button>
+              </div>
+              <h2 className="ml-1 font-display text-lg font-bold text-ink">{title}</h2>
+              <span className="inline-flex items-center rounded-full bg-primary-50 px-2 py-0.5 text-[10.5px] font-bold tabular-nums text-primary-700">
+                {scopedSessions.length} in view
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-end">
+              <div
+                className="flex rounded-lg border border-ink/15 bg-white p-1"
+                role="group"
+                aria-label="Filter by session mode"
+              >
+                {MODE_FILTERS.map((m) => (
+                  <button
+                    key={m.key}
+                    type="button"
+                    aria-pressed={modeFilter === m.key}
+                    onClick={() => setModeFilter(m.key)}
+                    className={cn(
+                      "h-7 rounded-md px-2.5 text-[11.5px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400",
+                      modeFilter === m.key
+                        ? "bg-accent-400 text-ink shadow-sm"
+                        : "text-ink-soft hover:bg-cream"
+                    )}
+                  >
+                    {m.label}
+                  </button>
                 ))}
               </div>
-              <div className="mt-2 grid grid-cols-7 gap-1.5">
-                {Array.from({ length: 35 }).map((_, i) => (
-                  <div key={`c-${i}`} className="min-h-[112px] rounded-lg bg-ink/10" />
+              <div
+                className="flex rounded-lg border border-ink/15 bg-white p-1 shadow-card"
+                role="tablist"
+                aria-label="Calendar view"
+              >
+                {(["month", "week"] as View[]).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    role="tab"
+                    aria-selected={view === v}
+                    onClick={() => setView(v)}
+                    className={cn(
+                      "h-7 rounded-md px-4 text-[13px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400",
+                      view === v
+                        ? "bg-primary-600 text-white shadow-soft"
+                        : "text-ink-soft hover:bg-cream"
+                    )}
+                  >
+                    {v.charAt(0).toUpperCase() + v.slice(1)}
+                  </button>
                 ))}
               </div>
             </div>
-          ) : view === "month" ? (
-            <MonthGrid {...gridProps} />
-          ) : (
-            <WeekStrip {...gridProps} daysClickable />
-          )}
-        </div>
+          </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink/10 bg-cream/40 px-4 py-2.5 sm:px-5">
-          <p className="flex items-center gap-1.5 text-[12px] font-medium text-ink-muted">
-            <CalendarDays className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            Click any date to open its schedule — no page change.
-          </p>
-          <span className="text-[11px] font-semibold text-ink-faint">
-            {visible.length} confirmed session{visible.length === 1 ? "" : "s"}
-          </span>
-        </div>
-      </section>
+          <div className="p-3 sm:p-5">
+            {loading ? (
+              <div className="animate-pulse" aria-hidden>
+                <div className="grid grid-cols-7 gap-1.5">
+                  {Array.from({ length: 7 }).map((_, i) => (
+                    <div key={`h-${i}`} className="h-4 rounded-full bg-ink/10" />
+                  ))}
+                </div>
+                <div className="mt-2 grid grid-cols-7 gap-1.5">
+                  {Array.from({ length: 35 }).map((_, i) => (
+                    <div key={`c-${i}`} className="min-h-[112px] rounded-lg bg-ink/10" />
+                  ))}
+                </div>
+              </div>
+            ) : view === "month" ? (
+              <MonthGrid {...gridProps} />
+            ) : (
+              <WeekStrip {...gridProps} daysClickable />
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink/10 bg-cream/40 px-4 py-2.5 sm:px-5">
+            <p className="flex items-center gap-1.5 text-[12px] font-medium text-ink-muted">
+              <CalendarDays className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              Click any date to open its schedule — no page change.
+            </p>
+            <span className="text-[11px] font-semibold text-ink-faint">
+              {scopedSessions.length} confirmed session{scopedSessions.length === 1 ? "" : "s"} in view
+              {modeFilter !== "all" ? ` · ${modeLabel}` : ""}
+            </span>
+          </div>
+        </section>
+
+        <SessionsSidebar
+          liveSession={liveSession}
+          nextSession={nextSession}
+          today={today}
+          todaySessions={todaySessions}
+          aliases={aliases}
+          counselorNames={counselorNames}
+          role={role}
+          now={now}
+          busiestDays={busiestDays}
+          needsClosing={needsClosing}
+          rangeLabel={rangeLabel}
+          onSelect={pickSession}
+          onOpenDay={expandDay}
+        />
+      </div>
 
       {overlayOpen && (
         <DayOverlay

@@ -5,10 +5,12 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useStudentsBoard } from "@/lib/hooks/use-students-board";
 import { clampPage } from "@/lib/pagination";
-import { STRESS_META } from "@/lib/report-palette";
+import { ATTENTION_META, STRESS_META } from "@/lib/report-palette";
 import { Card } from "@/components/ui/primitives";
 import { StudentTable, type Student } from "@/components/students/StudentTable";
-import { RiskSummary } from "@/components/students/RiskSummary";
+import { RiskSummary, type AttentionGaugeItem } from "@/components/students/RiskSummary";
+import { StudentsHeader } from "@/components/students/StudentsHeader";
+import type { QuickFilter, SortDir, StudentSortKey } from "@/components/students/types";
 
 type ApptLite = { student_id: string; scheduled_at: string; status: string };
 type RefLite = { student_id: string; status: string; priority: string };
@@ -71,11 +73,36 @@ function StudentsPageInner() {
   const [programFilter, setProgramFilterState] = useState("all");
   const [yearFilter, setYearFilterState] = useState("all");
   const [collegeFilter, setCollegeFilterState] = useState("all");
+  const [quickFilter, setQuickFilterState] = useState<QuickFilter>("all");
+  const [sortKey, setSortKey] = useState<StudentSortKey>("alias");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
   // Any filter change resets to page 1 (page window belongs to a result set).
   const setQuery = useCallback((v: string) => { setQueryState(v); gotoPage(1); }, [gotoPage]);
   const setProgramFilter = useCallback((v: string) => { setProgramFilterState(v); gotoPage(1); }, [gotoPage]);
   const setYearFilter = useCallback((v: string) => { setYearFilterState(v); gotoPage(1); }, [gotoPage]);
   const setCollegeFilter = useCallback((v: string) => { setCollegeFilterState(v); gotoPage(1); }, [gotoPage]);
+  const setQuickFilter = useCallback((f: QuickFilter) => { setQuickFilterState(f); gotoPage(1); }, [gotoPage]);
+  const onSort = useCallback(
+    (k: StudentSortKey) => {
+      if (sortKey === k) {
+        setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      } else {
+        setSortKey(k);
+        // Names/programs read best A→Z; counts and dates read best largest/newest first.
+        setSortDir(k === "alias" || k === "program" ? "asc" : "desc");
+      }
+      gotoPage(1);
+    },
+    [sortKey, gotoPage]
+  );
+  const clearFilters = useCallback(() => {
+    setQueryState("");
+    setProgramFilterState("all");
+    setYearFilterState("all");
+    setCollegeFilterState("all");
+    setQuickFilterState("all");
+    gotoPage(1);
+  }, [gotoPage]);
 
   useEffect(() => {
     if (isError) toast.error("Couldn't load students right now.");
@@ -193,6 +220,25 @@ function StudentsPageInner() {
     return out.sort((a, b) => b.rank - a.rank);
   }, [rows, perStudent]);
 
+  // Gauge buckets: each flagged student counted once, by their top signal.
+  const attentionGauge = useMemo<AttentionGaugeItem[]>(() => {
+    let urgent = 0;
+    let highStress = 0;
+    let repeatMiss = 0;
+    for (const n of needsAttention) {
+      if (n.rank >= 3) urgent += 1;
+      else if (n.rank >= 2) highStress += 1;
+      else repeatMiss += 1;
+    }
+    return (
+      [
+        { key: "urgent" as const, name: ATTENTION_META.urgent.label, value: urgent },
+        { key: "high_stress" as const, name: ATTENTION_META.high_stress.label, value: highStress },
+        { key: "repeat_miss" as const, name: ATTENTION_META.repeat_miss.label, value: repeatMiss },
+      ] as AttentionGaugeItem[]
+    ).filter((b) => b.value > 0);
+  }, [needsAttention]);
+
   const programBars = useMemo(() => {
     const counts = new Map<string, number>();
     for (const s of rows) counts.set(s.program ?? "Undeclared", (counts.get(s.program ?? "Undeclared") ?? 0) + 1);
@@ -219,6 +265,8 @@ function StudentsPageInner() {
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const monthAgo = now - 30 * 24 * 60 * 60 * 1000;
+    const bandRank = (b: string | null | undefined) => (b === "high" ? 2 : b === "moderate" ? 1 : b === "low" ? 0 : -1);
     return rows
       .filter((s) => (programFilter === "all" ? true : s.program === programFilter))
       .filter((s) => (yearFilter === "all" ? true : s.year_level === yearFilter))
@@ -226,12 +274,54 @@ function StudentsPageInner() {
       .filter((s) =>
         !q
           ? true
-          : `${s.anonymous_alias ?? ""} ${s.program ?? ""} ${s.year_level ?? ""}`.toLowerCase().includes(q)
-      );
-  }, [rows, programFilter, yearFilter, collegeFilter, query]);
+          : `${s.anonymous_alias ?? ""} ${s.program ?? ""} ${s.year_level ?? ""} ${s.college ?? ""}`.toLowerCase().includes(q)
+      )
+      .filter((s) => {
+        if (quickFilter === "all") return true;
+        const agg = perStudent.get(s.id);
+        switch (quickFilter) {
+          case "attention":
+            return !!agg && (agg.urgentRefs > 0 || (agg.band === "high" && agg.upcoming === 0) || agg.missed >= 2);
+          case "high":
+            return agg?.band === "high";
+          case "referrals":
+            return (agg?.openRefs ?? 0) > 0;
+          case "upcoming":
+            return (agg?.upcoming ?? 0) > 0;
+          case "never":
+            return (agg?.total ?? 0) === 0;
+          case "new":
+            return new Date(s.created_at).getTime() >= monthAgo;
+          default:
+            return true;
+        }
+      })
+      .slice()
+      .sort((a, b) => {
+        const A = perStudent.get(a.id);
+        const B = perStudent.get(b.id);
+        const mul = sortDir === "asc" ? 1 : -1;
+        switch (sortKey) {
+          case "program":
+            return mul * (a.program ?? "zzz").localeCompare(b.program ?? "zzz");
+          case "sessions":
+            return mul * ((A?.total ?? 0) - (B?.total ?? 0));
+          case "upcoming":
+            return mul * ((A?.nextAt ? new Date(A.nextAt).getTime() : 0) - (B?.nextAt ? new Date(B.nextAt).getTime() : 0));
+          case "referrals":
+            return mul * ((A?.openRefs ?? 0) - (B?.openRefs ?? 0));
+          case "screening":
+            return mul * (bandRank(A?.band) - bandRank(B?.band));
+          case "alias":
+          default:
+            return mul * (a.anonymous_alias ?? "").localeCompare(b.anonymous_alias ?? "");
+        }
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, programFilter, yearFilter, collegeFilter, query, quickFilter, perStudent, sortKey, sortDir]);
 
-  // Render window into the filtered set (exact totals — search covers the
-  // full loaded directory, unlike server-paged boards).
+  // Render window into the filtered + sorted set (exact totals — search covers
+  // the full loaded directory, unlike server-paged boards).
   const totalPages = Math.max(1, Math.ceil(visible.length / size));
   const safePage = Math.min(page, totalPages);
   const paged = useMemo(
@@ -248,41 +338,26 @@ function StudentsPageInner() {
     );
   }
 
-  const statCards = [
-    { label: "Students", value: stats.total },
-    { label: "With upcoming session", value: stats.withUpcoming },
-    { label: "With open referral", value: stats.withOpenRefs },
-    { label: "High stress (latest)", value: stats.highStress },
-    { label: "Needs attention", value: stats.needsAttention },
-    { label: "Never booked", value: stats.neverBooked },
-    { label: "New this month", value: stats.newMonth },
-    { label: "Programs", value: stats.programs },
-  ];
+  const statCards = {
+    total: stats.total,
+    withUpcoming: stats.withUpcoming,
+    withOpenRefs: stats.withOpenRefs,
+    highStress: stats.highStress,
+    newMonth: stats.newMonth,
+    programs: stats.programs,
+    needsAttention: stats.needsAttention,
+    neverBooked: stats.neverBooked,
+  };
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="font-display text-2xl font-bold">{role === "counselor" ? "My students" : "Students"}</h1>
-        {role === "counselor" && (
-          <p className="mt-1 max-w-[600px] text-sm leading-relaxed text-ink-muted">
-            Your caseload — students from your sessions, assigned referrals, and chats. Aliases only, with each student&apos;s load with you.
-          </p>
-        )}
-      </div>
-
-      {/* Visible stats cards — same row pattern as /appointments. */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {statCards.map((s) => (
-          <div key={s.label} className="rounded-lg border border-ink/10 bg-white p-4 shadow-card">
-            <span className="block text-[11px] font-bold uppercase tracking-wider text-ink-muted">{s.label}</span>
-            {loading ? (
-              <span className="mt-2 block h-8 w-12 animate-pulse rounded bg-ink/10" aria-hidden />
-            ) : (
-              <span className="mt-1 block font-display text-2xl font-bold text-ink">{s.value}</span>
-            )}
-          </div>
-        ))}
-      </div>
+      <StudentsHeader
+        role={role}
+        loading={loading}
+        stats={statCards}
+        quickFilter={quickFilter}
+        onQuickFilter={setQuickFilter}
+      />
 
       {role === "counselor" && !counselorId && !loading && (
         <div className="rounded-lg border border-accent-200 bg-accent-50 p-5 shadow-card">
@@ -295,12 +370,14 @@ function StudentsPageInner() {
 
       <RiskSummary
         loading={loading}
-        needsAttention={needsAttention.slice(0, 8)}
+        attentionGauge={attentionGauge}
         programBars={programBars}
         screeningDonut={screeningDonut}
+        attentionTotal={needsAttention.length}
+        onSeeAll={() => setQuickFilter("attention")}
       />
 
-      {/* Directory — filters live inside, above the student table */}
+      {/* Directory — filters and sorting live inside, above the student table */}
       <StudentTable
         visible={paged}
         totalCount={visible.length}
@@ -321,6 +398,12 @@ function StudentsPageInner() {
         years={years}
         colleges={colleges}
         perStudent={perStudent}
+        quickFilter={quickFilter}
+        setQuickFilter={setQuickFilter}
+        sortKey={sortKey}
+        sortDir={sortDir}
+        onSort={onSort}
+        onClearFilters={clearFilters}
       />
     </div>
   );

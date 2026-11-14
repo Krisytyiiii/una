@@ -40,9 +40,25 @@ export default function Book() {
     let alive = true;
     void (async () => {
       try {
-        const { data, error } = await getSupabase()
+        const supabase = getSupabase();
+        // Paused counselors keep their windows but must not surface new
+        // bookable times — filter to counselors who are accepting bookings.
+        const { data: availableCounselors, error: counselorError } = await supabase
+          .from('counselors')
+          .select('id')
+          .eq('is_available', true)
+          .limit(200);
+        if (!alive) return;
+        if (counselorError) throw counselorError;
+        const counselorIds = (availableCounselors ?? []).map((c) => c.id as string);
+        if (!counselorIds.length) {
+          setWindows([]);
+          return;
+        }
+        const { data, error } = await supabase
           .from('counselor_availability')
           .select('weekday, start_time, end_time, is_recurring, valid_from, valid_to')
+          .in('counselor_id', counselorIds)
           .limit(500);
         if (!alive) return;
         if (error) throw error;

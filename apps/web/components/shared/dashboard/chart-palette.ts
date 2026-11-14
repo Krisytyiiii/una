@@ -1,62 +1,13 @@
 import { colors } from "@dorsu/ui-tokens";
 
 /**
- * Chart palette for the dark dashboard canvas.
+ * Chart palette for the light dashboard canvas.
  *
- * The reports palette (`lib/report-palette.ts`) uses deep primary/accent steps
- * that disappear on `#050C16`. This mirrors its semantic keys with the LIGHT
- * end of the same two brand hues, so the strict blue/yellow rule survives:
- * blues carry flow and progression, yellows carry attention and terminal
- * states.
+ * The reports palette (`lib/report-palette.ts`) uses deep primary/accent steps.
+ * These mirror its semantic keys with readable steps on white, so the strict
+ * blue/yellow rule survives: blues carry flow and progression, yellows carry
+ * attention and terminal states.
  */
-
-export const DARK_STATUS_COLORS: Record<string, string> = {
-  pending: colors.yellow[300],
-  assigned: colors.blue[200],
-  acknowledged: colors.blue[300],
-  in_progress: colors.blue[400],
-  confirmed: colors.blue[500],
-  escalated: colors.yellow[500],
-  resolved: colors.blue[100],
-  rejected: colors.yellow[700],
-};
-
-export const DARK_PRIORITY_COLORS: Record<string, string> = {
-  urgent: colors.yellow[500],
-  high: colors.yellow[300],
-  medium: colors.blue[400],
-  low: colors.blue[200],
-};
-
-/** Appointment lifecycle colours for the counselor session-status donut. */
-export const DARK_APPOINTMENT_COLORS: Record<string, string> = {
-  pending: colors.yellow[300],
-  assigned: colors.yellow[200],
-  confirmed: colors.blue[300],
-  completed: colors.blue[500],
-  no_show: colors.yellow[500],
-  cancelled: colors.blue[100],
-  rejected: colors.yellow[700],
-};
-
-/** Session mode split (single-select per appointment). */
-export const DARK_MODE_COLORS: Record<string, string> = {
-  online: colors.blue[400],
-  in_person: colors.blue[200],
-};
-
-export const DARK_CLASSIFICATION_COLORS: Record<string, string> = {
-  Behavioral: colors.yellow[300],
-  Relational: colors.blue[400],
-  Financial: colors.blue[200],
-  Absenteeism: colors.yellow[400],
-  "Social Adjustment": colors.blue[300],
-  "Academic-related": colors.blue[500],
-  Health: colors.yellow[500],
-  Others: colors.blue[100],
-};
-
-const FALLBACK = colors.blue[200];
 
 /** Deeper steps for the light dashboard canvas (same semantics). */
 export const LIGHT_STATUS_COLORS: Record<string, string> = {
@@ -92,6 +43,20 @@ export const LIGHT_MODE_COLORS: Record<string, string> = {
   in_person: colors.blue[400],
 };
 
+/**
+ * Fixed office-snapshot metrics. These are different units (sessions, people,
+ * chats), so the shades are categorical rather than a single-hue ramp: blues
+ * for throughput, yellow for the one queue that needs attention.
+ */
+export const LIGHT_SNAPSHOT_COLORS: Record<string, string> = {
+  upcomingSessions: colors.blue[800],
+  sessionsToday: colors.blue[600],
+  activeStudents: colors.blue[400],
+  activeCounselors: colors.blue[300],
+  referralsWaiting: colors.yellow[500],
+  openChats: colors.blue[200],
+};
+
 /** Deeper steps for the light dashboard canvas (same semantics). */
 export const LIGHT_CLASSIFICATION_COLORS: Record<string, string> = {
   Behavioral: colors.yellow[500],
@@ -106,18 +71,6 @@ export const LIGHT_CLASSIFICATION_COLORS: Record<string, string> = {
 
 const LIGHT_FALLBACK = colors.blue[500];
 
-export function statusColor(key: string): string {
-  return DARK_STATUS_COLORS[key] ?? FALLBACK;
-}
-
-export function priorityColor(key: string): string {
-  return DARK_PRIORITY_COLORS[key] ?? FALLBACK;
-}
-
-export function classificationColor(key: string): string {
-  return DARK_CLASSIFICATION_COLORS[key] ?? FALLBACK;
-}
-
 export function lightStatusColor(key: string): string {
   return LIGHT_STATUS_COLORS[key] ?? LIGHT_FALLBACK;
 }
@@ -130,16 +83,12 @@ export function lightClassificationColor(key: string): string {
   return LIGHT_CLASSIFICATION_COLORS[key] ?? LIGHT_FALLBACK;
 }
 
-export function appointmentStatusColor(key: string): string {
-  return DARK_APPOINTMENT_COLORS[key] ?? FALLBACK;
+export function lightSnapshotColor(key: string): string {
+  return LIGHT_SNAPSHOT_COLORS[key] ?? LIGHT_FALLBACK;
 }
 
 export function lightAppointmentStatusColor(key: string): string {
   return LIGHT_APPOINTMENT_COLORS[key] ?? LIGHT_FALLBACK;
-}
-
-export function modeColor(key: string): string {
-  return DARK_MODE_COLORS[key] ?? FALLBACK;
 }
 
 export function lightModeColor(key: string): string {

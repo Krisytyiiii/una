@@ -1,17 +1,20 @@
 "use client";
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
 
-export type ThemeMode = "light" | "dark" | "system";
-export type ResolvedTheme = "light" | "dark";
+/**
+ * Appearance is intentionally fixed to light. The product is a single, calm
+ * cream/ink surface and the old light/dark/system switch was removed so the
+ * workspace, charts, and printed records always read the same way.
+ *
+ * `useTheme` is kept as a compatible read-only surface because the chart and
+ * calendar components use `resolvedTheme` to pick their tick/grid colours.
+ * They now always receive "light".
+ */
+export type ThemeMode = "light";
+export type ResolvedTheme = "light";
 
+/** Legacy key. Cleared on mount so previously-saved dark preferences die. */
 export const THEME_STORAGE_KEY = "chekie-theme";
 
 type ThemeContextValue = {
@@ -20,66 +23,28 @@ type ThemeContextValue = {
   setTheme: (theme: ThemeMode) => void;
 };
 
+const NOOP = () => {};
+
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-function resolveTheme(mode: ThemeMode): ResolvedTheme {
-  if (mode === "system") {
-    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  }
-  return mode;
-}
-
-function applyTheme(mode: ThemeMode): ResolvedTheme {
-  const resolved = resolveTheme(mode);
-  const root = document.documentElement;
-  root.classList.toggle("dark", resolved === "dark");
-  root.dataset.theme = mode;
-  root.style.colorScheme = resolved;
-  return resolved;
-}
-
-/**
- * Light / dark / system appearance. The choice is stored locally (it is a
- * device preference, not account data), the `dark` class drives the CSS theme,
- * and `system` follows the OS media query live. A tiny inline script in the
- * root layout applies the saved value before paint to avoid a colour flash.
- */
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<ThemeMode>("system");
-  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>("light");
-  const [ready, setReady] = useState(false);
-
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  // Defensive cleanup: a stale `.dark` class or saved preference from an older
+  // build would otherwise keep the old palette on screen.
   useEffect(() => {
-    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-    if (stored === "light" || stored === "dark" || stored === "system") {
-      setThemeState(stored);
-    }
-    setReady(true);
-  }, []);
-
-  useEffect(() => {
-    if (!ready) return;
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const sync = () => setResolvedTheme(applyTheme(theme));
-
-    sync();
-    if (theme !== "system") return;
-    media.addEventListener("change", sync);
-    return () => media.removeEventListener("change", sync);
-  }, [theme, ready]);
-
-  const setTheme = useCallback((next: ThemeMode) => {
-    setThemeState(next);
+    const root = document.documentElement;
+    root.classList.remove("dark");
+    root.dataset.theme = "light";
+    root.style.colorScheme = "light";
     try {
-      window.localStorage.setItem(THEME_STORAGE_KEY, next);
+      window.localStorage.removeItem(THEME_STORAGE_KEY);
     } catch {
-      // Storage can be blocked in private mode; the in-memory choice still works.
+      // Storage can be blocked in private mode; forcing the class is enough.
     }
   }, []);
 
-  const value = useMemo(
-    () => ({ theme, resolvedTheme, setTheme }),
-    [theme, resolvedTheme, setTheme]
+  const value = useMemo<ThemeContextValue>(
+    () => ({ theme: "light", resolvedTheme: "light", setTheme: NOOP }),
+    []
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

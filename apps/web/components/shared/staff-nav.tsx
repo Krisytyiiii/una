@@ -8,7 +8,6 @@ import { ChekieMark } from "@/components/Logo";
 import { useRealtime } from "./realtime-provider";
 import { useRoutePending } from "./route-pending";
 import { SignOutButton } from "./sign-out-button";
-import { ThemeMenu } from "./theme-menu";
 import { useAvatarUrl } from "@/lib/hooks/use-avatar-url";
 import { LINK_ICONS } from "./nav-icons";
 import { cn } from "@/lib/utils";
@@ -123,14 +122,14 @@ export function useNavCounts() {
  */
 export function StaffNav({ title, profile, onMenuClick }: { title: string; profile?: NavProfile; onMenuClick?: () => void }) {
   return (
-    <header data-shell-chrome className="sticky top-0 z-30 border-b border-white/10 bg-[#050C16]/90 text-blue-100 backdrop-blur">
+    <header data-shell-chrome className="sticky top-0 z-30 border-b border-ink/10 bg-white/90 text-ink backdrop-blur">
       <div className="flex h-14 w-full items-center gap-2 px-4">
         {onMenuClick && (
           <button
             type="button"
             onClick={onMenuClick}
             aria-label="Open navigation menu"
-            className="flex h-10 w-10 items-center justify-center rounded-full text-blue-100/70 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-300/60 md:hidden"
+            className="flex h-10 w-10 items-center justify-center rounded-full text-ink-muted transition hover:bg-ink/[0.05] hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 md:hidden"
           >
             <Menu className="h-5 w-5" aria-hidden />
           </button>
@@ -139,8 +138,8 @@ export function StaffNav({ title, profile, onMenuClick }: { title: string; profi
         <Link href="/" className="flex min-w-0 items-center gap-2 md:hidden" aria-label="Chekie — back to home">
           <ChekieMark size={32} label="Chekie panda mascot" />
           <span className="leading-tight">
-            <span className="block font-display text-[15px] font-semibold text-white">Chekie</span>
-            <span className="block text-[10px] font-bold uppercase tracking-[0.14em] text-blue-100/40">
+            <span className="block font-display text-[15px] font-semibold text-ink">Chekie</span>
+            <span className="block text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">
               {title}
             </span>
           </span>
@@ -206,7 +205,7 @@ function ProfileMenu({ profile }: { profile: NavProfile }) {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={open ? "Close account menu" : "Open account menu"}
-        className="flex h-10 items-center gap-0.5 rounded-full py-1 pl-1 pr-1.5 transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-300/60"
+        className="flex h-10 items-center gap-0.5 rounded-full py-1 pl-1 pr-1.5 transition hover:bg-ink/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
       >
         <span
           aria-hidden
@@ -219,14 +218,14 @@ function ProfileMenu({ profile }: { profile: NavProfile }) {
             initial
           )}
         </span>
-        <ChevronDown aria-hidden className={cn("h-4 w-4 text-blue-100/50 transition-transform duration-200", open && "rotate-180")} />
+        <ChevronDown aria-hidden className={cn("h-4 w-4 text-ink-faint transition-transform duration-200", open && "rotate-180")} />
       </button>
       {open && (
         <div
           role="menu"
           aria-label="Account"
           data-shell-popover
-          className="absolute right-0 top-full z-50 mt-2 w-64 rounded-2xl border border-white/10 bg-[#07101D]/95 text-white shadow-[0_28px_80px_-20px_rgba(0,0,0,0.95)] backdrop-blur-xl"
+          className="absolute right-0 top-full z-50 mt-2 w-64 rounded-2xl border border-ink/10 bg-white text-ink shadow-[0_28px_70px_-20px_rgba(15,23,42,0.32)]"
         >
           <div className="flex items-center gap-3 px-4 py-3">
             <span
@@ -241,12 +240,12 @@ function ProfileMenu({ profile }: { profile: NavProfile }) {
               )}
             </span>
             <div className="min-w-0 flex-1 leading-tight">
-              <p className="truncate text-[13px] font-bold text-white">
+              <p className="truncate text-[13px] font-bold text-ink">
                 {profile?.full_name ?? "Staff member"}
               </p>
-              <p className="truncate text-[11px] font-medium text-blue-100/50">{profile?.email}</p>
+              <p className="truncate text-[11px] font-medium text-ink-muted">{profile?.email}</p>
               {profile?.role && (
-                <p className="mt-1 inline-flex rounded-full bg-blue-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-blue-200 ring-1 ring-blue-400/20">
+                <p className="mt-1 inline-flex rounded-full bg-primary-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary-700 ring-1 ring-primary-200">
                   {ROLE_LABEL[profile.role] ?? profile.role}
                 </p>
               )}
@@ -254,8 +253,8 @@ function ProfileMenu({ profile }: { profile: NavProfile }) {
           </div>
 
           {manage && (
-            <div className="border-t border-white/10 px-2 py-2">
-              <p className="px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-blue-100/40">
+            <div className="border-t border-ink/10 px-2 py-2">
+              <p className="px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-ink-faint">
                 Manage
               </p>
               <ul className="space-y-0.5">
@@ -280,10 +279,10 @@ function ProfileMenu({ profile }: { profile: NavProfile }) {
                             startNavigation(l.href);
                           }
                         }}
-                        className="flex items-center gap-2.5 rounded-md px-2 py-2 text-[13px] font-medium text-blue-100/60 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-300/60"
+                        className="flex items-center gap-2.5 rounded-md px-2 py-2 text-[13px] font-medium text-ink-soft transition hover:bg-cream hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
                       >
                         <Icon
-                          className="h-4 w-4 shrink-0 text-blue-200/60"
+                          className="h-4 w-4 shrink-0 text-primary-600"
                           aria-hidden
                         />
                         <span className="truncate">{l.label}</span>
@@ -295,9 +294,7 @@ function ProfileMenu({ profile }: { profile: NavProfile }) {
             </div>
           )}
 
-          <ThemeMenu />
-
-          <div className="border-t border-white/10 px-3 py-3">
+          <div className="border-t border-ink/10 px-3 py-3">
             <SignOutButton />
           </div>
         </div>
@@ -366,22 +363,22 @@ function NotifBell() {
         onFocus={peek}
         onBlur={hide}
         aria-label={count ? `Notifications, ${count} unread` : "Notifications"}
-        className="relative flex h-10 w-10 items-center justify-center rounded-full text-blue-100/70 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-300/60"
+        className="relative flex h-10 w-10 items-center justify-center rounded-full text-ink-muted transition hover:bg-ink/[0.05] hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
       >
         <Bell className="h-5 w-5" aria-hidden />
         {count > 0 && (
           <span
             aria-hidden
-            className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white ring-2 ring-white dark:ring-[#050C16]"
+            className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white ring-2 ring-white"
           >
             {count > 99 ? "99+" : count}
           </span>
         )}
       </Link>
       {open && (
-        <div data-shell-popover className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-2xl border border-white/10 bg-[#07101D]/95 text-white shadow-[0_28px_80px_-20px_rgba(0,0,0,0.95)] backdrop-blur-xl">
-          <p className="border-b border-white/10 px-4 py-2.5 font-display text-sm font-bold text-white">
-            Notifications {count > 0 && <span className="text-blue-100/50">· {count} unread</span>}
+        <div data-shell-popover className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-2xl border border-ink/10 bg-white text-ink shadow-[0_28px_70px_-20px_rgba(15,23,42,0.32)]">
+          <p className="border-b border-ink/10 px-4 py-2.5 font-display text-sm font-bold text-ink">
+            Notifications {count > 0 && <span className="text-ink-muted">· {count} unread</span>}
           </p>
           {items.length ? (
             <ul className="max-h-72 overflow-y-auto">
@@ -393,17 +390,17 @@ function NotifBell() {
                       setOpen(false);
                       start(n.link ?? "/notifications");
                     }}
-                    className="flex items-center gap-2.5 px-4 py-2.5 transition-colors hover:bg-white/[0.06]"
+                    className="flex items-center gap-2.5 px-4 py-2.5 transition-colors hover:bg-cream"
                   >
-                    <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-yellow-300" />
-                    <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-blue-100/80">{n.title}</span>
-                    <span className="shrink-0 text-[11px] font-medium text-blue-100/40">{timeShort(n.created_at)}</span>
+                    <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-accent-500" />
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink-soft">{n.title}</span>
+                    <span className="shrink-0 text-[11px] font-medium text-ink-faint">{timeShort(n.created_at)}</span>
                   </Link>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="px-4 py-6 text-center text-[13px] text-blue-100/50">All caught up — nothing unread.</p>
+            <p className="px-4 py-6 text-center text-[13px] text-ink-muted">All caught up — nothing unread.</p>
           )}
           <Link
             href="/notifications"
@@ -411,7 +408,7 @@ function NotifBell() {
               setOpen(false);
               start();
             }}
-            className="block border-t border-white/10 bg-white/[0.04] px-4 py-2.5 text-center text-[13px] font-bold text-yellow-300 hover:bg-white/[0.07]"
+            className="block border-t border-ink/10 bg-cream/60 px-4 py-2.5 text-center text-[13px] font-bold text-primary-700 hover:bg-cream"
           >
             View all notifications
           </Link>

@@ -42,13 +42,13 @@ export type BoardAppointment = {
   pss10_booking_at?: string | null;
   pss10_booking_score?: number | null;
   pss10_booking_band?: string | null;
-  /** Request timestamp — the office board's primary sort. */
+  /** Request timestamp — the request trail (no longer the board sort key). */
   created_at: string;
-  /** Last-write timestamp (00062 trigger) — the counselor board's primary sort. */
+  /** Last-write timestamp (00062 trigger) — activity trail, not the sort key. */
   updated_at: string;
 };
 
-export type BoardCounselor = { id: string; name: string };
+export type BoardCounselor = { id: string; name: string; available: boolean };
 
 /** Counselor availability window driving the confirm/reschedule dropdowns. */
 export type BoardSlot = {
@@ -58,6 +58,13 @@ export type BoardSlot = {
   is_recurring: boolean;
   valid_from: string | null;
   valid_to: string | null;
+};
+
+/** An active session that already occupies a counselor's calendar. */
+export type BoardBusyWindow = {
+  id: string;
+  scheduled_at: string;
+  ends_at: string | null;
 };
 
 export type AppointmentsStats = {
@@ -79,6 +86,12 @@ export type AppointmentsBoardData = {
   headIds: string[];
   /** Own availability slots (counselor role only) — confirm/reschedule scope. */
   slots: BoardSlot[];
+  /**
+   * Counselor's active (assigned/confirmed) sessions across the scheduling
+   * window — the picker hides these times so a double-booking can't be
+   * selected in the first place.
+   */
+  busyWindows: BoardBusyWindow[];
   /** Pager state for this cache entry. */
   page: number;
   size: number;
@@ -104,7 +117,7 @@ export type AppointmentsScope = {
 export const DEFAULT_APPOINTMENTS_SCOPE: AppointmentsScope = {
   page: 1,
   size: 25,
-  status: "all",
+  status: "active",
   mode: "all",
   counselor: "all",
   kind: "appointments",
@@ -265,6 +278,7 @@ export async function fetchAppointmentsBoard(scope: AppointmentsScope): Promise<
     totalApprox: 0,
     stats: EMPTY_STATS,
     kindCounts: EMPTY_KIND,
+    busyWindows: [] as BoardBusyWindow[],
   };
   if (!r || r === "faculty") {
     return {
@@ -293,13 +307,14 @@ export async function fetchAppointmentsBoard(scope: AppointmentsScope): Promise<
     };
   }
 
-  // Counselor queue reads latest-activity first: the 00062 trigger bumps
-  // updated_at on assign/confirm/reschedule/complete, so whatever the counselor
-  // or head just touched is on top. The office reads most-recently-requested
-  // first (created_at) so mobile bookings land on top regardless of how far
-  // out the session date is.
-  const asc = false;
-  const orderBy: "created_at" | "updated_at" = r === "counselor" ? "updated_at" : "created_at";
+  // Every role reads the same board order: scheduled_at ascending, so the
+  // soonest session is always on top and the first visible column ("When") is
+  // actually sorted. The default status scope is "active" (pending/assigned/
+  // confirmed) so old completed history never pushes today's queue down the
+  // page. Activity/created timestamps stay on the row but no longer decide the
+  // order — sorting by an invisible key made rows look randomly shuffled.
+  const asc = true;
+  const orderBy: "created_at" | "updated_at" | "scheduled_at" = "scheduled_at";
   const listOpts = {
     status,
     mode,
@@ -369,30 +384,48 @@ export async function fetchAppointmentsBoard(scope: AppointmentsScope): Promise<
     studentProfiles = new Map(studentRows.map((s) => [s.id, s.profile_id]));
   }
 
-  const { data: counselorRows } = await supabase.from("counselors").select("id, profile_id").limit(100);
+  const { data: counselorRows } = await supabase
+    .from("counselors")
+    .select("id, profile_id, is_available")
+    .limit(100);
   const profileIds = ((counselorRows ?? []) as { id: string; profile_id: string }[]).map((c) => c.profile_id);
   let names = new Map<string, string>();
   if (profileIds.length) {
     const { data: profiles } = await supabase.from("profiles").select("id, full_name").in("id", profileIds);
     names = new Map(((profiles ?? []) as { id: string; full_name: string | null }[]).map((p) => [p.id, p.full_name ?? "Counselor"]));
   }
-  const counselors = ((counselorRows ?? []) as { id: string; profile_id: string }[]).map((c) => ({
+  const counselors = ((counselorRows ?? []) as { id: string; profile_id: string; is_available: boolean }[]).map((c) => ({
     id: c.id,
     name: names.get(c.profile_id) ?? "Counselor",
+    available: c.is_available,
   }));
   const { data: headRows } = await supabase.from("profiles").select("id").eq("role", "guidance_head").eq("is_active", true);
   const headIds = ((headRows ?? []) as { id: string }[]).map((h) => h.id);
 
   // Own availability windows power the counselor's confirm/reschedule
   // dropdowns (the schedule must sit inside these slots). The head never
-  // schedules, so only the counselor branch fetches them.
+  // schedules, so only the counselor branch fetches them. Active sessions are
+  // fetched alongside so the picker can grey out already-booked times.
   let slots: BoardSlot[] = [];
+  let busyWindows: BoardBusyWindow[] = [];
   if (r === "counselor" && cid) {
-    const { data: slotRows } = await supabase
-      .from("counselor_availability")
-      .select("weekday, start_time, end_time, is_recurring, valid_from, valid_to")
-      .eq("counselor_id", cid);
+    const windowStart = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const [{ data: slotRows }, { data: busyRows }] = await Promise.all([
+      supabase
+        .from("counselor_availability")
+        .select("weekday, start_time, end_time, is_recurring, valid_from, valid_to")
+        .eq("counselor_id", cid),
+      supabase
+        .from("appointments")
+        .select("id, scheduled_at, ends_at")
+        .eq("counselor_id", cid)
+        .in("status", ["assigned", "confirmed"])
+        .gte("scheduled_at", windowStart)
+        .order("scheduled_at", { ascending: true })
+        .limit(500),
+    ]);
     slots = ((slotRows ?? []) as BoardSlot[]);
+    busyWindows = ((busyRows ?? []) as BoardBusyWindow[]);
   }
 
   return {
@@ -403,6 +436,7 @@ export async function fetchAppointmentsBoard(scope: AppointmentsScope): Promise<
     counselors,
     headIds,
     slots,
+    busyWindows,
     hasMore,
     totalApprox: totalRes.count ?? 0,
     stats: {

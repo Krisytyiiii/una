@@ -89,6 +89,21 @@ export async function assignAppointment(
   counselorId: string | null,
 ) {
   if (counselorId) {
+    // A counselor who paused bookings (counselors.is_available = false) keeps
+    // their slots but must not receive new sessions — the head assigns work to
+    // active counselors only. Their existing sessions stay untouched.
+    const { data: counselor, error: counselorError } = await db
+      .from("counselors")
+      .select("id, is_available")
+      .eq("id", counselorId)
+      .maybeSingle();
+    if (counselorError) throw counselorError;
+    if (!counselor) throw new Error("Unknown counselor.");
+    if (!(counselor as { is_available: boolean }).is_available) {
+      throw new Error(
+        "That counselor has paused bookings — pick an available counselor, or ask them to switch bookings back on."
+      );
+    }
     const { data, error } = await db
       .from("appointments")
       .update({ counselor_id: counselorId, status: "assigned" })
@@ -96,7 +111,24 @@ export async function assignAppointment(
       .in("status", ["pending", "assigned"])
       .select()
       .single();
-    if (error) throw error;
+    if (error) {
+      const code = (error as { code?: string })?.code;
+      // The exclusion constraint (00067) blocks assigning a request whose
+      // requested time already overlaps that counselor's active session.
+      if (code === "23P01") {
+        throw new Error(
+          "That counselor already has a session at this time — choose another counselor, or have them reschedule first."
+        );
+      }
+      // Guarded update matched no row: the request left pending/assigned (most
+      // often cancelled by the student) between render and click.
+      if (code === "PGRST116") {
+        throw new Error(
+          "This session is no longer open for assignment — it's already cancelled, completed, or rejected."
+        );
+      }
+      throw error;
+    }
     return data;
   }
   const { data, error } = await db
@@ -106,7 +138,12 @@ export async function assignAppointment(
     .eq("status", "assigned")
     .select()
     .single();
-  if (error) throw error;
+  if (error) {
+    if ((error as { code?: string })?.code === "PGRST116") {
+      throw new Error("Only an assigned session can be unassigned — it may have changed already.");
+    }
+    throw error;
+  }
   return data;
 }
 

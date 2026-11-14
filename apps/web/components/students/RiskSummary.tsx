@@ -1,86 +1,106 @@
 "use client";
 
+import { AlertTriangle, ArrowUpRight, PieChart } from "lucide-react";
 import { ReportBars, ReportDonut } from "@/components/shared/reports-charts";
-import type { Student } from "./StudentTable";
+import { HeadGauge } from "@/components/shared/dashboard/head-gauge";
+import { ATTENTION_META } from "@/lib/report-palette";
 
-export type AttentionItem = { student: Student; reasons: string[]; rank: number };
 export type ProgramBar = { label: string; value: number };
 export type ScreeningSlice = { name: string; value: number; color: string };
+export type AttentionGaugeItem = { key: keyof typeof ATTENTION_META; name: string; value: number };
 
 /**
- * Risk overview — needs-attention list, program bars, screening donut.
- * Page owns all memos; this is pure presentation.
+ * Insight bento — attention gauge (same dashboard dial + tooltip), latest
+ * screening mix, and program spread. Page owns all memos; this is pure
+ * presentation plus navigation.
  */
 export function RiskSummary({
   loading,
-  needsAttention,
+  attentionGauge,
   programBars,
   screeningDonut,
+  attentionTotal,
+  onSeeAll,
 }: {
   loading: boolean;
-  needsAttention: AttentionItem[];
+  attentionGauge: AttentionGaugeItem[];
   programBars: ProgramBar[];
   screeningDonut: ScreeningSlice[];
+  attentionTotal: number;
+  onSeeAll: () => void;
 }) {
   return (
-    <>
-      {/* Needs attention + screening mix */}
-      <div className="grid gap-4 xl:grid-cols-2">
-        <section className="rounded-lg border border-ink/10 bg-white p-5 shadow-card">
-          <h2 className="font-display text-base font-bold text-ink">Needs attention</h2>
-          <p className="mt-0.5 text-[13px] text-ink-muted">Urgent referrals, unsupported high stress, and repeated misses.</p>
-          {loading ? (
-            <div className="animate-pulse space-y-3 pt-3" aria-hidden>
-              <div className="h-10 rounded-lg bg-ink/10" />
-              <div className="h-10 rounded-lg bg-ink/10" />
-              <div className="h-10 rounded-lg bg-ink/10" />
-            </div>
-          ) : needsAttention.length ? (
-            <ul className="mt-3 max-h-[300px] divide-y divide-ink/10 overflow-y-auto">
-              {needsAttention.map(({ student: s, reasons }) => (
-                <li key={s.id} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-bold text-ink">{s.anonymous_alias ?? "Student"}</p>
-                    <p className="mt-0.5 truncate text-xs font-medium text-ink-muted">{s.program ?? "Undeclared"}</p>
-                  </div>
-                  <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
-                    {reasons.map((r) => (
-                      <span key={r} className="rounded-full bg-accent-100 px-2.5 py-0.5 text-[11px] font-bold text-accent-700">
-                        {r}
-                      </span>
-                    ))}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-3 rounded-lg bg-cream px-4 py-3 text-[13px] text-ink-muted">
-              Nothing urgent — no unsupported high-stress screens, urgent referrals, or repeat misses.
+    <div className="grid gap-4 xl:grid-cols-12">
+      {/* Attention signals */}
+      <section className="rounded-2xl border border-ink/10 bg-white p-5 shadow-card xl:col-span-7">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-1.5 font-display text-base font-bold text-ink">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent-100 text-accent-700">
+                <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+              </span>
+              Needs attention
+            </h2>
+            <p className="mt-1 text-[13px] text-ink-muted">
+              Each student counted once, by their most urgent signal.
             </p>
+          </div>
+          {!loading && attentionTotal > 0 && (
+            <button
+              type="button"
+              onClick={onSeeAll}
+              className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full border border-ink/10 bg-white px-2.5 text-[11.5px] font-bold text-ink-soft shadow-card transition hover:border-primary-300 hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
+            >
+              View {attentionTotal}
+              <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+            </button>
           )}
-        </section>
-        <section className="rounded-lg border border-ink/10 bg-white p-5 shadow-card">
-          <h2 className="font-display text-base font-bold text-ink">Latest screening mix</h2>
-          <p className="mt-0.5 text-[13px] text-ink-muted">Each student counted once, by most recent PSS-10 band.</p>
-          {loading ? (
-            <div className="animate-pulse pt-4" aria-hidden>
-              <div className="h-[200px] rounded-lg bg-ink/10" />
-            </div>
-          ) : screeningDonut.length ? (
-            <ReportDonut data={screeningDonut} />
-          ) : (
-            <p className="mt-3 rounded-lg bg-cream px-4 py-3 text-[13px] text-ink-muted">No screenings yet.</p>
-          )}
-        </section>
-      </div>
+        </div>
 
-      {/* Program mix */}
-      <section className="rounded-lg border border-ink/10 bg-white p-5 shadow-card">
+        {loading ? (
+          <div className="animate-pulse pt-4" aria-hidden>
+            <div className="h-[240px] rounded-lg bg-ink/10" />
+          </div>
+        ) : (
+          <HeadGauge
+            className="mt-4"
+            items={attentionGauge}
+            colorOf={(key) => ATTENTION_META[key as keyof typeof ATTENTION_META]?.color ?? "#2563EB"}
+            emptyTitle="Nothing urgent right now"
+            emptyHint="No unsupported high-stress screens, urgent referrals, or repeat misses."
+            note="Urgent referrals · high stress with nothing booked · two or more missed sessions."
+            centerLabel="flagged"
+          />
+        )}
+      </section>
+
+      {/* Screening mix */}
+      <section className="rounded-2xl border border-ink/10 bg-white p-5 shadow-card xl:col-span-5">
+        <h2 className="flex items-center gap-1.5 font-display text-base font-bold text-ink">
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-100 text-primary-700">
+            <PieChart className="h-3.5 w-3.5" aria-hidden />
+          </span>
+          Latest screening mix
+        </h2>
+        <p className="mt-1 text-[13px] text-ink-muted">Each student counted once, by most recent PSS-10 band.</p>
+        {loading ? (
+          <div className="animate-pulse pt-4" aria-hidden>
+            <div className="h-[200px] rounded-lg bg-ink/10" />
+          </div>
+        ) : screeningDonut.length ? (
+          <ReportDonut data={screeningDonut} />
+        ) : (
+          <p className="mt-3 rounded-lg bg-cream px-4 py-3 text-[13px] text-ink-muted">No screenings yet.</p>
+        )}
+      </section>
+
+      {/* Program spread */}
+      <section className="rounded-2xl border border-ink/10 bg-white p-5 shadow-card xl:col-span-12">
         <h2 className="font-display text-base font-bold text-ink">Students per program</h2>
         <p className="mt-0.5 text-[13px] text-ink-muted">Where to focus outreach and group sessions.</p>
         {loading ? (
           <div className="animate-pulse pt-4" aria-hidden>
-            <div className="h-[240px] rounded-lg bg-ink/10" />
+            <div className="h-[220px] rounded-lg bg-ink/10" />
           </div>
         ) : programBars.length ? (
           <ReportBars data={programBars} />
@@ -88,6 +108,6 @@ export function RiskSummary({
           <p className="mt-3 rounded-lg bg-cream px-4 py-3 text-[13px] text-ink-muted">No program data yet.</p>
         )}
       </section>
-    </>
+    </div>
   );
 }

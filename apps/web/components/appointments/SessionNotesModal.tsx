@@ -454,7 +454,7 @@ export function SessionNotesModal({
       aria-modal="true"
       aria-labelledby="session-notes-title"
     >
-      <div aria-hidden className="absolute inset-0 bg-ink/40 dark:bg-black/70" onClick={() => !busy && !removingId && onClose()} />
+      <div aria-hidden className="absolute inset-0 bg-ink/40" onClick={() => !busy && !removingId && onClose()} />
       <div className="no-scrollbar relative max-h-[90vh] w-full overflow-y-auto rounded-lg bg-white shadow-card sm:max-w-lg">
         <div className="flex items-start justify-between gap-3 border-b border-ink/10 px-6 pb-4 pt-5">
           <div className="min-w-0">
@@ -478,7 +478,7 @@ export function SessionNotesModal({
               aria-label="Close session notes"
               onClick={onClose}
               disabled={busy || !!removingId}
-              className="inline-flex h-8 w-8 items-center justify-center rounded text-ink-muted transition-colors hover:bg-cream hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 disabled:opacity-50"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-cream hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 disabled:opacity-50"
             >
               <X className="h-4 w-4" aria-hidden />
             </button>
@@ -535,7 +535,7 @@ export function SessionNotesModal({
               <button
                 type="button"
                 onClick={() => refetch()}
-                className="mt-3 inline-flex h-8 items-center gap-1.5 rounded bg-red-600 px-4 text-[13px] font-bold text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                className="mt-3 inline-flex h-6 items-center gap-1.5 rounded-full bg-red-600 px-3 text-[11.5px] font-bold text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
               >
                 Try again
               </button>

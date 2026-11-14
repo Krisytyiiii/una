@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { ArrowLeft, MessagesSquare } from "lucide-react";
+import { ArrowLeft, Clock, Inbox, Lock, MessageCircle, MessagesSquare } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -29,7 +29,7 @@ import {
   type NotificationsBoardData,
 } from "@/lib/hooks/use-notifications-board";
 import { notifyStaff } from "@/lib/notify";
-import { ThreadList, type Convo } from "@/components/chat/ThreadList";
+import { ThreadList, avatarToneFor, type Convo } from "@/components/chat/ThreadList";
 import { MessageList } from "@/components/chat/MessageList";
 import { Composer } from "@/components/chat/Composer";
 import { NewMessageModal } from "@/components/chat/NewMessageModal";
@@ -472,6 +472,15 @@ export default function ChatPage() {
     return !!studentProfile && last.sender_profile_id === studentProfile;
   };
 
+  const openThreadCount = threads.filter((t) => t.status === "open").length;
+  const threadCounts = {
+    all: threads.length,
+    open: openThreadCount,
+    closed: threads.length - openThreadCount,
+  };
+  const awaitingCount = threads.filter(needsReply).length;
+  const unreadDmCount = dmGroups.reduce((n, g) => n + g.unread, 0);
+
   const openThread = (id: string) => {
     setActiveDm(null);
     setActiveId(id);
@@ -614,12 +623,63 @@ export default function ChatPage() {
   const showing = active ?? activeDm;
 
   return (
-    <div className="space-y-4 lg:flex lg:h-[calc(100vh-5rem-1.5rem-1rem)] lg:flex-col lg:gap-4 lg:space-y-0 lg:overflow-hidden">
-      <div className="lg:shrink-0">
-        <h1 className="font-display text-2xl font-bold">Checki chats</h1>
-      </div>
+    <div className="space-y-3 lg:flex lg:h-[calc(100vh-5rem-1.5rem-1rem)] lg:flex-col lg:gap-3 lg:space-y-0 lg:overflow-hidden">
+      {/* Hero — role-aware summary so the inbox reads like a workspace, not a list. */}
+      <section className="relative shrink-0 overflow-hidden rounded-2xl border border-primary-100 bg-gradient-to-br from-white via-cream to-blue-50 px-5 py-4 shadow-card sm:px-6">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-14 -top-16 h-44 w-44 rounded-full bg-primary-200/40 blur-2xl"
+        />
+        <div className="relative flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-600 text-white shadow-soft">
+              <MessagesSquare className="h-5 w-5" aria-hidden />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary-700">
+                Guidance office · Messages
+              </p>
+              <h1 className="mt-0.5 font-display text-2xl font-bold text-ink">Checki chats</h1>
+              <p className="mt-1 max-w-[600px] text-[13px] leading-relaxed text-ink-muted">
+                {isFaculty
+                  ? "Talk to the guidance office about your referrals — replies land right here."
+                  : isOffice
+                    ? "Direct staff messages across the office. Student–counselor threads stay private to their participants."
+                    : "Reply to students on your threads and coordinate with faculty — everything updates live."}
+              </p>
+            </div>
+          </div>
 
-      <div className="grid items-start gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[340px_minmax(0,1fr)]">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex items-center gap-1 rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-bold text-ink-soft ring-1 ring-ink/5">
+              <MessagesSquare className="h-3 w-3 text-primary-600" aria-hidden />
+              {convos.length} conversation{convos.length === 1 ? "" : "s"}
+            </span>
+            {isCounselor && (
+              <>
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 ring-1 ring-inset ring-emerald-100">
+                  <MessageCircle className="h-3 w-3" aria-hidden />
+                  {openThreadCount} open
+                </span>
+                {awaitingCount > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-800 ring-1 ring-inset ring-amber-100">
+                    <Clock className="h-3 w-3" aria-hidden />
+                    {awaitingCount} awaiting reply
+                  </span>
+                )}
+              </>
+            )}
+            {unreadDmCount > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-primary-50 px-2.5 py-1 text-[11px] font-bold text-primary-700 ring-1 ring-inset ring-primary-100">
+                <Inbox className="h-3 w-3" aria-hidden />
+                {unreadDmCount} unread
+              </span>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <div className="grid items-start gap-3 lg:min-h-0 lg:flex-1 lg:grid-cols-[340px_minmax(0,1fr)]">
         <ThreadList
           convos={convos}
           loading={loading}
@@ -641,53 +701,73 @@ export default function ChatPage() {
           openDm={openDm}
           needsReply={needsReply}
           onNewMessage={openMessenger}
+          threadCounts={threadCounts}
         />
 
         {/* Conversation */}
         <section
           aria-label={active ? `Chat with ${activeAlias}` : activeDm ? `Direct chat with ${activeDmName}` : "No chat selected"}
-          className={`overflow-hidden rounded-lg border border-ink/10 bg-white shadow-card lg:h-full lg:min-h-0 ${showThreadMobile ? "flex flex-col" : "hidden lg:flex lg:flex-col"}`}
+          className={`overflow-hidden rounded-2xl border border-ink/10 bg-white shadow-card lg:h-full lg:min-h-0 ${showThreadMobile ? "flex flex-col" : "hidden lg:flex lg:flex-col"}`}
         >
           {!showing ? (
-            <div className="flex min-h-[420px] flex-col items-center justify-center px-6 py-12 text-center lg:min-h-0 lg:flex-1">
-              <span className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-primary-600 ring-1 ring-blue-100">
+            <div className="flex min-h-[420px] flex-col items-center justify-center bg-gradient-to-b from-white to-cream/40 px-6 py-12 text-center lg:min-h-0 lg:flex-1">
+              <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 text-primary-600 shadow-sm ring-1 ring-blue-100">
                 <MessagesSquare className="h-8 w-8" aria-hidden />
               </span>
-              <p className="mt-4 font-display text-lg font-bold text-ink">No chat selected</p>
-              <p className="mt-1 max-w-[320px] text-sm leading-relaxed text-ink-muted">
+              <p className="mt-4 font-display text-lg font-bold text-ink">Pick a conversation</p>
+              <p className="mt-1 max-w-[360px] text-sm leading-relaxed text-ink-muted">
                 {isFaculty
                   ? "Select a conversation from the list to read and reply. Use + to message a counselor or the guidance head about your referrals."
                   : isOffice
                     ? "Select a conversation from the list to read and reply. Use + to message a counselor directly."
                     : "Select a conversation from the list to read and reply. Use + to message faculty about their referrals. Threads open from student sessions — the amber dot marks ones waiting on a counselor."}
               </p>
+              <div className="mt-4 flex flex-wrap justify-center gap-1.5">
+                <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-ink-soft ring-1 ring-ink/5">
+                  <Clock className="h-3 w-3 text-primary-600" aria-hidden /> Live updates
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-ink-soft ring-1 ring-ink/5">
+                  <Inbox className="h-3 w-3 text-primary-600" aria-hidden /> Message history saved
+                </span>
+              </div>
             </div>
           ) : active ? (
             <>
-              <div className="flex items-center gap-3 border-b border-ink/10 px-4 py-3">
+              <div className="flex items-center gap-3 border-b border-ink/10 bg-gradient-to-b from-white to-cream/40 px-3.5 py-3 sm:px-4">
                 <button
                   type="button"
                   onClick={() => setShowThreadMobile(false)}
                   aria-label="Back to conversations"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded text-ink-soft hover:bg-cream lg:hidden"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-ink-soft transition hover:bg-white hover:text-ink lg:hidden"
                 >
                   <ArrowLeft className="h-5 w-5" aria-hidden />
                 </button>
-                <span
-                  aria-hidden
-                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-display text-sm font-bold text-white ${
-                    active.status === "open" ? "bg-primary-600" : "bg-ink/30"
-                  }`}
-                >
-                  {initials(activeAlias)}
+                <span className="relative shrink-0">
+                  <span
+                    aria-hidden
+                    className={`flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br font-display text-sm font-bold text-white shadow-sm ${
+                      active.status === "open" ? avatarToneFor(activeAlias) : "from-slate-400 to-slate-500"
+                    }`}
+                  >
+                    {initials(activeAlias)}
+                  </span>
+                  <span
+                    aria-hidden
+                    className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-white ${
+                      active.status === "open" ? "bg-emerald-500" : "bg-slate-400"
+                    }`}
+                  />
                 </span>
                 <div className="min-w-0 flex-1 leading-tight">
                   <p className="truncate text-[15px] font-bold text-ink">{activeAlias}</p>
                   <p className="truncate text-xs font-medium text-ink-muted">
-                    {activeCounselor} · {active.status === "open" ? "Open" : "Closed"}
+                    {activeCounselor} · {active.status === "open" ? "Open thread" : "Closed thread"}
+                    {role === "guidance_head" && !iAmParticipant ? " · supervisory" : ""}
                   </p>
                 </div>
-                <Badge tone={active.status === "open" ? "success" : "info"}>{active.status === "open" ? "Open" : "Closed"}</Badge>
+                <Badge tone={active.status === "open" ? "success" : "info"}>
+                  {active.status === "open" ? "Open" : "Closed"}
+                </Badge>
               </div>
 
               <MessageList
@@ -698,13 +778,15 @@ export default function ChatPage() {
                 onScroll={onMessagesScroll}
                 onJump={jumpToLatest}
                 emptyText="No messages yet — say hello first."
+                peerLabel={activeAlias}
+                peerTone={avatarToneFor(activeAlias)}
                 topSlot={
                   hasMoreHistory ? (
                     <button
                       type="button"
                       onClick={loadOlder}
                       disabled={loadingOlder}
-                      className="mx-auto mb-1 block rounded-full bg-cream px-4 py-1.5 text-xs font-bold text-ink-soft transition hover:bg-cream-dark disabled:opacity-50"
+                      className="rounded-full bg-white px-4 py-1.5 text-xs font-bold text-ink-soft shadow-sm ring-1 ring-ink/10 transition hover:text-ink disabled:opacity-50"
                     >
                       {loadingOlder ? "Loading…" : "Load older messages"}
                     </button>
@@ -723,32 +805,43 @@ export default function ChatPage() {
                   sendLabel="Send reply"
                 />
               ) : (
-                <p className="border-t border-ink/10 bg-cream px-4 py-3 text-[13px] leading-relaxed text-ink-muted">
-                  Supervisory view — replies come from the assigned counselor ({activeCounselor}), so this
-                  conversation is read-only for you.
+                <p className="flex items-start gap-2 border-t border-ink/10 bg-cream px-4 py-3 text-[12.5px] leading-relaxed text-ink-muted">
+                  <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-faint" aria-hidden />
+                  <span>
+                    Supervisory view — replies come from the assigned counselor ({activeCounselor}), so this
+                    conversation is read-only for you.
+                  </span>
                 </p>
               )}
             </>
           ) : (
             <>
-              <div className="flex items-center gap-3 border-b border-ink/10 px-4 py-3">
+              <div className="flex items-center gap-3 border-b border-ink/10 bg-gradient-to-b from-white to-cream/40 px-3.5 py-3 sm:px-4">
                 <button
                   type="button"
                   onClick={() => setShowThreadMobile(false)}
                   aria-label="Back to conversations"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded text-ink-soft hover:bg-cream lg:hidden"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-ink-soft transition hover:bg-white hover:text-ink lg:hidden"
                 >
                   <ArrowLeft className="h-5 w-5" aria-hidden />
                 </button>
-                <span
-                  aria-hidden
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ink font-display text-sm font-bold text-white"
-                >
-                  {initials(activeDmName)}
+                <span className="relative shrink-0">
+                  <span
+                    aria-hidden
+                    className={`flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br font-display text-sm font-bold text-white shadow-sm ${avatarToneFor(
+                      activeDmName
+                    )}`}
+                  >
+                    {initials(activeDmName)}
+                  </span>
+                  <span
+                    aria-hidden
+                    className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-emerald-500 ring-2 ring-white"
+                  />
                 </span>
                 <div className="min-w-0 flex-1 leading-tight">
                   <p className="truncate text-[15px] font-bold text-ink">{activeDmName}</p>
-                  <p className="truncate text-xs font-medium text-ink-muted">Direct message</p>
+                  <p className="truncate text-xs font-medium text-ink-muted">Direct message · staff only</p>
                 </div>
                 <Badge tone="info">Direct</Badge>
               </div>
@@ -760,6 +853,8 @@ export default function ChatPage() {
                 showJump={showJump}
                 onScroll={onMessagesScroll}
                 onJump={jumpToLatest}
+                peerLabel={activeDmName}
+                peerTone={avatarToneFor(activeDmName)}
               />
 
               <Composer

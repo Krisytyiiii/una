@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect } from "react";
-import { CalendarClock, Eye, Loader2, X } from "lucide-react";
+import { CalendarClock, Eye, Loader2, Lock, X } from "lucide-react";
 import { Badge, Button } from "@/components/ui/primitives";
 import { Dropdown } from "@/components/shared/dropdown";
 import {
   ACTION_ICON,
   TRIAGE_COPY,
+  assignmentLockNote,
   classificationSummary,
+  isReferralAssignable,
   nextMoves,
   priorityTone,
   referralStudentName,
@@ -89,6 +91,9 @@ export function ReferralDetailModal({
   const upcoming = isSessionUpcoming(sessionIso);
   const actions = nextMoves(referral.status, isCounselor);
   const history = trail.get(referral.id) ?? [];
+  // Assignment locks once the counselor confirms — only pending/assigned can
+  // pick or swap a counselor (see REFERRAL_ASSIGNABLE_STATUSES).
+  const assignable = isReferralAssignable(referral.status);
 
   return (
     <div
@@ -101,7 +106,7 @@ export function ReferralDetailModal({
         type="button"
         aria-label="Close referral details"
         onClick={onClose}
-        className="absolute inset-0 bg-black/40 dark:bg-black/70"
+        className="absolute inset-0 bg-black/40"
       />
       <div className="no-scrollbar relative max-h-[90vh] w-full overflow-y-auto rounded-lg bg-white p-6 shadow-card sm:max-w-2xl">
         <div className="flex items-start justify-between gap-3">
@@ -118,7 +123,7 @@ export function ReferralDetailModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded text-ink-soft transition hover:bg-cream-dark hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-ink-soft transition hover:bg-cream-dark hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
           >
             <X className="h-4 w-4" aria-hidden />
           </button>
@@ -152,7 +157,7 @@ export function ReferralDetailModal({
           <div className="sm:col-span-2">
             <dt className="text-[11px] font-bold uppercase tracking-wider text-ink-faint">Handling</dt>
             <dd className="mt-1">
-              {canAssign ? (
+              {canAssign && assignable ? (
                 <span className="inline-flex items-center gap-1.5">
                   <Dropdown
                     menuKey={`ref-detail-assign-${referral.id}`}
@@ -173,7 +178,15 @@ export function ReferralDetailModal({
                   )}
                 </span>
               ) : (
-                <span className="font-bold text-ink">{counselorName(referral.assigned_counselor_id)}</span>
+                <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <span className="font-bold text-ink">{counselorName(referral.assigned_counselor_id)}</span>
+                  {canAssign && !assignable && (
+                    <span className="inline-flex items-center gap-1 text-[11.5px] font-medium text-ink-faint">
+                      <Lock className="h-3 w-3" aria-hidden />
+                      {assignmentLockNote(referral.status)}
+                    </span>
+                  )}
+                </span>
               )}
             </dd>
           </div>

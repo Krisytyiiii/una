@@ -6,25 +6,25 @@ import { AnimatedSection, Eyebrow, Stagger, StaggerItem } from "@/components/Ani
 const pains = [
   {
     icon: Clock3,
-    tint: "bg-yellow-400/15 text-yellow-300",
+    tint: "bg-yellow-100 text-yellow-700",
     title: "Long waits, manual booking",
     body: "Appointments run through Facebook messages, QR codes, and walk-ins — easy to miss, hard to reschedule, and stressful when you already feel overwhelmed.",
   },
   {
     icon: DoorOpen,
-    tint: "bg-blue-500/15 text-blue-300",
+    tint: "bg-blue-100 text-blue-700",
     title: "Stigma at the office door",
     body: "Many students hesitate to walk into the Guidance Office and be seen. Without a private way to reach out, small worries grow into crises.",
   },
   {
     icon: Megaphone,
-    tint: "bg-blue-400/15 text-blue-200",
+    tint: "bg-blue-100 text-blue-600",
     title: "Low awareness of support",
     body: "Wellness events and announcements get buried in feeds. Students don't know when, where, or how to ask for help — so most never do.",
   },
   {
     icon: LineChart,
-    tint: "bg-yellow-400/15 text-yellow-200",
+    tint: "bg-yellow-100 text-yellow-700",
     title: "No data, no early action",
     body: "With paper logs and scattered chats, counselors can't see stress trends, peak periods, or common concerns — decisions come too late.",
   },
@@ -38,14 +38,14 @@ export function Problem() {
           <Eyebrow>Why this matters</Eyebrow>
           <h2
             id="problem-heading"
-            className="mt-5 text-balance text-3xl font-semibold tracking-[-0.03em] text-white sm:text-[2.6rem]"
+            className="mt-5 text-balance text-3xl font-semibold tracking-[-0.03em] text-ink sm:text-[2.6rem]"
           >
             Students are struggling —{" "}
-            <span className="font-serif font-normal italic text-yellow-300">
+            <span className="font-serif font-normal italic text-blue-600">
               reaching help shouldn&apos;t be hard too.
             </span>
           </h2>
-          <p className="mt-4 text-[17px] leading-relaxed text-blue-100/55">
+          <p className="mt-4 text-[17px] leading-relaxed text-ink-muted">
             Stress, anxiety, and academic pressure are rising at DOrSU. But the
             path to counseling still depends on who you message, which QR code
             you scan, or whether you&apos;re brave enough to walk in.
@@ -55,14 +55,14 @@ export function Problem() {
         <Stagger className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4" delay={0.1}>
           {pains.map(({ icon: Icon, tint, title, body }) => (
             <StaggerItem key={title}>
-              <article className="group h-full rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-[0_18px_50px_-30px_rgba(0,0,0,0.9)] backdrop-blur-xl transition-all duration-300 hover:-translate-y-1.5 hover:border-blue-400/30 hover:bg-white/[0.07]">
+              <article className="group h-full rounded-3xl border border-ink/10 bg-white/80 p-6 shadow-card backdrop-blur-xl transition-all duration-300 hover:-translate-y-1.5 hover:border-blue-300 hover:bg-white">
                 <span className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl ${tint}`}>
                   <Icon className="h-6 w-6" aria-hidden />
                 </span>
-                <h3 className="mt-4 font-display text-[17px] font-semibold leading-snug text-white">
+                <h3 className="mt-4 font-display text-[17px] font-semibold leading-snug text-ink">
                   {title}
                 </h3>
-                <p className="mt-2 text-[14.5px] leading-relaxed text-blue-100/55">
+                <p className="mt-2 text-[14.5px] leading-relaxed text-ink-muted">
                   {body}
                 </p>
               </article>

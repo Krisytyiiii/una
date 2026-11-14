@@ -37,8 +37,8 @@ export function StaffShell({
     groups ?? [{ label: "Menu", inline: true, links: links ?? [] }];
   const role = profile?.role ?? null;
   // Counselor, guidance head, and faculty share the guidance canvas so all
-  // three roles get the same dark/light workspace; admin keeps the neutral
-  // cream shell for its head-only tools.
+  // three roles get the same workspace; admin keeps the neutral cream shell
+  // for its head-only tools.
   const onGuidanceCanvas =
     role === "counselor" || role === "guidance_head" || role === "faculty";
 
@@ -92,8 +92,8 @@ export function StaffShell({
             onClick={() => setMenuOpen(false)}
             className="absolute inset-0 bg-black/60"
           />
-          <div data-shell-chrome className="absolute inset-y-0 left-0 flex w-60 max-w-[85vw] flex-col bg-[#050C16] shadow-2xl">
-            <div className="flex h-14 shrink-0 items-center gap-2 border-b border-white/10 px-4">
+          <div data-shell-chrome className="absolute inset-y-0 left-0 flex w-60 max-w-[85vw] flex-col bg-white shadow-2xl">
+            <div className="flex h-14 shrink-0 items-center gap-2 border-b border-ink/10 px-4">
               <Link
                 href="/"
                 onClick={() => setMenuOpen(false)}
@@ -102,8 +102,8 @@ export function StaffShell({
               >
                 <ChekieMark size={32} label="Chekie panda mascot" />
                 <span className="leading-tight">
-                  <span className="block font-display text-[15px] font-semibold text-white">Chekie</span>
-                  <span className="block text-[10px] font-bold uppercase tracking-[0.14em] text-blue-100/40">
+                  <span className="block font-display text-[15px] font-semibold text-ink">Chekie</span>
+                  <span className="block text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">
                     {title}
                   </span>
                 </span>
@@ -112,7 +112,7 @@ export function StaffShell({
                 type="button"
                 onClick={() => setMenuOpen(false)}
                 aria-label="Close navigation menu"
-                className="flex h-8 w-8 items-center justify-center rounded text-blue-100/70 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-300/60"
+                className="flex h-8 w-8 items-center justify-center rounded text-ink-muted transition hover:bg-ink/[0.05] hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
               >
                 <X className="h-5 w-5" aria-hidden />
               </button>

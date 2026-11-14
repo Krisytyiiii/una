@@ -6,6 +6,7 @@ import { ArrowLeft, CalendarDays, ClipboardList, ExternalLink, FileText, Inbox, 
 import { Button, Card } from "@/components/ui/primitives";
 import { EmptyState, PanelShell } from "@/components/shared/panel-shell";
 import { useStudentRecord, type StudentTimelineRow } from "@/lib/hooks/use-student-record";
+import { StudentRecordSkeleton } from "@/components/students/StudentRecordSkeleton";
 import { SessionNotesModal } from "@/components/appointments/SessionNotesModal";
 import { formatWhen } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -32,9 +33,9 @@ const FILTERS = [
 type FilterKey = (typeof FILTERS)[number]["key"];
 
 function bandTone(band: string): string {
-  if (band === "high") return "bg-accent-700 text-white";
-  if (band === "moderate") return "bg-accent-100 text-accent-700";
-  return "bg-primary-100 text-primary-800";
+  if (band === "high") return "bg-red-100 text-red-800";
+  if (band === "moderate") return "bg-amber-100 text-amber-800";
+  return "bg-green-100 text-green-800";
 }
 
 function monthLabel(iso: string | null): string {
@@ -133,13 +134,7 @@ export function StudentRecordView({ studentId }: { studentId: string }) {
   const alias = data?.header.anonymous_alias ?? "Student record";
 
   if (isPending) {
-    return (
-      <div className="animate-pulse space-y-4" aria-hidden>
-        <div className="h-8 w-56 rounded-lg bg-ink/10" />
-        <div className="h-28 rounded-lg bg-ink/10" />
-        <div className="h-64 rounded-lg bg-ink/10" />
-      </div>
-    );
+    return <StudentRecordSkeleton />;
   }
 
   if (isError || !data) {

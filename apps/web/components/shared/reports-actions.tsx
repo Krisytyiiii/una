@@ -82,7 +82,7 @@ export function ExportReportsButton({
       type="button"
       disabled={busy}
       onClick={handleExport}
-      className="inline-flex items-center gap-1.5 rounded-full border-2 border-ink/15 bg-white px-4 py-1.5 text-[13px] font-bold text-ink transition hover:border-primary-400 disabled:opacity-50"
+      className="inline-flex h-6 items-center gap-1.5 rounded-full border border-ink/15 bg-white px-3 text-[11.5px] font-bold text-ink transition hover:border-primary-400 disabled:opacity-50"
     >
       {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />}
       {busy ? "Building workbook…" : "Export Excel"}
