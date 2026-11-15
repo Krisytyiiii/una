@@ -87,6 +87,12 @@ export type AppointmentsBoardData = {
   /** Own availability slots (counselor role only) — confirm/reschedule scope. */
   slots: BoardSlot[];
   /**
+   * Every counselor's published windows, keyed by counselor id (guidance head
+   * only). The assignment dropdown greys out a counselor whose slots do not
+   * cover the requested time — the same rule the server enforces.
+   */
+  slotsByCounselor: Map<string, BoardSlot[]>;
+  /**
    * Counselor's active (assigned/confirmed) sessions across the scheduling
    * window — the picker hides these times so a double-booking can't be
    * selected in the first place.
@@ -246,6 +252,7 @@ async function attachLinkedCheckins(
 export const APPOINTMENTS_BOARD_STALE_MS = 60_000;
 
 const EMPTY_MAP = new Map<string, string>();
+const EMPTY_SLOTS_BY_COUNSELOR = new Map<string, BoardSlot[]>();
 const EMPTY_STATS: AppointmentsStats = { total: 0, pending: 0, assigned: 0, confirmed: 0, completed: 0, unassigned: 0 };
 const EMPTY_KIND = { appointments: 0, followups: 0 };
 
@@ -289,6 +296,7 @@ export async function fetchAppointmentsBoard(scope: AppointmentsScope): Promise<
       counselors: [],
       headIds: [],
       slots: [],
+      slotsByCounselor: EMPTY_SLOTS_BY_COUNSELOR,
     };
   }
 
@@ -304,6 +312,7 @@ export async function fetchAppointmentsBoard(scope: AppointmentsScope): Promise<
       counselors: [],
       headIds: [],
       slots: [],
+      slotsByCounselor: EMPTY_SLOTS_BY_COUNSELOR,
     };
   }
 
@@ -407,6 +416,7 @@ export async function fetchAppointmentsBoard(scope: AppointmentsScope): Promise<
   // schedules, so only the counselor branch fetches them. Active sessions are
   // fetched alongside so the picker can grey out already-booked times.
   let slots: BoardSlot[] = [];
+  let slotsByCounselor = EMPTY_SLOTS_BY_COUNSELOR;
   let busyWindows: BoardBusyWindow[] = [];
   if (r === "counselor" && cid) {
     const windowStart = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
@@ -426,6 +436,28 @@ export async function fetchAppointmentsBoard(scope: AppointmentsScope): Promise<
     ]);
     slots = ((slotRows ?? []) as BoardSlot[]);
     busyWindows = ((busyRows ?? []) as BoardBusyWindow[]);
+  } else if (r === "guidance_head") {
+    // The head assigns pending requests — every counselor's windows are needed
+    // so the dropdown can grey out anyone whose availability misses the
+    // requested time (the server rejects it too).
+    const { data: slotRows } = await supabase
+      .from("counselor_availability")
+      .select("counselor_id, weekday, start_time, end_time, is_recurring, valid_from, valid_to")
+      .limit(2000);
+    const grouped = new Map<string, BoardSlot[]>();
+    for (const row of ((slotRows ?? []) as (BoardSlot & { counselor_id: string })[])) {
+      const list = grouped.get(row.counselor_id) ?? [];
+      list.push({
+        weekday: row.weekday,
+        start_time: row.start_time,
+        end_time: row.end_time,
+        is_recurring: row.is_recurring,
+        valid_from: row.valid_from,
+        valid_to: row.valid_to,
+      });
+      grouped.set(row.counselor_id, list);
+    }
+    slotsByCounselor = grouped;
   }
 
   return {
@@ -436,6 +468,7 @@ export async function fetchAppointmentsBoard(scope: AppointmentsScope): Promise<
     counselors,
     headIds,
     slots,
+    slotsByCounselor,
     busyWindows,
     hasMore,
     totalApprox: totalRes.count ?? 0,

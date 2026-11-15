@@ -93,7 +93,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginVertical: spacing.xs,
   },
-  line: { flex: 1, height: 1, backgroundColor: colors.creamLine },
+  line: { flex: 1, height: 1, backgroundColor: colors.border },
   dividerText: {
     fontFamily: fontFamily.bold,
     fontSize: fontSize.xxs,

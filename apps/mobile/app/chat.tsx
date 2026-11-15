@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
@@ -11,12 +11,20 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  RefreshControl,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
-import Send from 'lucide-react-native/icons/send';
+import ArrowDown from 'lucide-react-native/icons/arrow-down';
 import MessageCircle from 'lucide-react-native/icons/message-circle';
+import SearchIcon from 'lucide-react-native/icons/search';
+import X from 'lucide-react-native/icons/x';
+import Lock from 'lucide-react-native/icons/lock';
+import Sparkles from 'lucide-react-native/icons/sparkles';
+import ShieldCheck from 'lucide-react-native/icons/shield-check';
 import {
   getThreadWithMessages,
   listStudentAppointments,
@@ -33,15 +41,19 @@ import {
   fontFamily,
   fontSize,
   radius,
-  buttonRadius,
   spacing,
   sizes,
   hitSlop,
+  cardShadow,
 } from '@/theme';
 import { IconButton } from '@/components/IconButton';
-import { ChatBubble } from '@/components/ChatBubble';
-import { LumiFigure } from '@/components/mascot/Lumi';
 import { Button } from '@/components/Button';
+import { ChatBubble } from '@/components/ChatBubble';
+import { InitialsAvatar } from '@/components/InitialsAvatar';
+import { Composer } from '@/components/chat/Composer';
+import { ConversationCard } from '@/components/chat/ConversationCard';
+import { PressableScale } from '@/components/PressableScale';
+import { LumiFigure } from '@/components/mascot/Lumi';
 import { TabBar, TAB_BAR_BASE } from '@/components/TabBar';
 import { getSupabase } from '@/lib/supabase/client';
 import { loadCounselorDirectory } from '@/lib/counselors';
@@ -50,6 +62,21 @@ import { useNotificationCount } from '@/lib/notifications-context';
 
 type Me = { profileId: string; studentId: string; alias: string };
 type ChatView = 'list' | 'thread';
+
+/** One inbox row: a messageable counselor, or a leftover/closed thread. */
+type InboxCard = {
+  key: string;
+  name: string;
+  subtitle: string;
+  preview: string;
+  mine: boolean;
+  time: string;
+  unread: boolean;
+  closed: boolean;
+  sortAt: number;
+  thread?: ChatThreadRow;
+  counselor?: MessageableCounselor;
+};
 
 const QUICK_REPLIES = ['Thank you', 'I need to talk', 'How do I reschedule?'];
 
@@ -139,10 +166,23 @@ export default function Chat() {
   const [awaitingCounselor, setAwaitingCounselor] = useState(false);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [opening, setOpening] = useState(false);
   const [startingFor, setStartingFor] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
+  // Threads opened this visit. Used for the inbox "new reply" treatment; the
+  // OS notification badge remains the cross-launch signal.
+  const [seen, setSeen] = useState<Record<string, true>>({});
+  const [bannerOpen, setBannerOpen] = useState(true);
+  // Scroll awareness for the "jump to latest" affordance. The button only
+  // appears after the reader drags away from the bottom, so programmatic
+  // auto-scrolls on open/send never flash it.
+  const [atBottom, setAtBottom] = useState(true);
+  const [userScrolled, setUserScrolled] = useState(false);
+  const [awayCount, setAwayCount] = useState(0);
+  const stickToBottom = useRef(true);
   const list = useRef<FlatList<ChatMessageRow> | null>(null);
   const { refresh: refreshUnread } = useNotificationCount();
 
@@ -243,6 +283,15 @@ export default function Chat() {
     }, [loadInbox]),
   );
 
+  const refreshInbox = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadInbox();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadInbox]);
+
   const threadId = thread?.id ?? null;
 
   // Live replies for the open thread. Server rows are deduped by id against
@@ -260,6 +309,9 @@ export default function Chat() {
           const row = payload.new as ChatMessageRow;
           setMessages((prev) => (prev.some((m) => m.id === row.id) ? prev : [...prev, row]));
           setPreviews((prev) => ({ ...prev, [threadId]: row }));
+          // Only nudge when the reader has scrolled away from the newest
+          // message — otherwise the list already follows the conversation.
+          if (!stickToBottom.current) setAwayCount((count) => count + 1);
         },
       )
       .subscribe();
@@ -287,6 +339,17 @@ export default function Chat() {
     }
   };
 
+  const markSeen = (id: string) =>
+    setSeen((prev) => (prev[id] ? prev : { ...prev, [id]: true }));
+
+  const resetThreadExtras = useCallback(() => {
+    setBannerOpen(true);
+    setAtBottom(true);
+    setUserScrolled(false);
+    setAwayCount(0);
+    stickToBottom.current = true;
+  }, []);
+
   const openConversation = async (row: ChatThreadRow) => {
     setView('thread');
     setThread(row);
@@ -294,6 +357,8 @@ export default function Chat() {
     setDraft('');
     setError('');
     setOpening(true);
+    resetThreadExtras();
+    markSeen(row.id);
     try {
       const supabase = getSupabase();
       const detail = await getThreadWithMessages(supabase, row.id);
@@ -326,8 +391,9 @@ export default function Chat() {
     setMessages([]);
     setDraft('');
     setError('');
-    setStartingFor(entry.counselorId);
     setOpening(true);
+    resetThreadExtras();
+    setStartingFor(entry.counselorId);
     try {
       const supabase = getSupabase();
       const created = (await openChatThread(supabase, {
@@ -335,6 +401,7 @@ export default function Chat() {
         counselorId: entry.counselorId,
       })) as ChatThreadRow;
       setThread(created);
+      markSeen(created.id);
       setThreads((prev) =>
         prev.some((t) => t.id === created.id)
           ? prev.map((t) => (t.id === created.id ? created : t))
@@ -362,8 +429,9 @@ export default function Chat() {
     setMessages([]);
     setDraft('');
     setError('');
+    resetThreadExtras();
     void loadInbox();
-  }, [loadInbox]);
+  }, [loadInbox, resetThreadExtras]);
 
   const handleBack = () => {
     if (view === 'thread') {
@@ -402,6 +470,12 @@ export default function Chat() {
         prev.map((t) => (t.id === thread.id ? { ...t, updated_at: sent.created_at } : t)),
       );
       setDraft('');
+      // Sending always returns the reader to the live end of the thread.
+      stickToBottom.current = true;
+      setAtBottom(true);
+      setUserScrolled(false);
+      setAwayCount(0);
+      scrollEnd();
     } catch (e) {
       setError(errorMessage(e, 'Could not send your message. Please try again.'));
     } finally {
@@ -411,317 +485,485 @@ export default function Chat() {
 
   const counselorName = thread?.counselor_id ? counselorNames[thread.counselor_id] : undefined;
   const who = counselorName ?? (thread?.counselor_id ? 'Counselor' : 'Guidance Office');
+  const whoSpecialty = thread?.counselor_id
+    ? counselorSpecialties[thread.counselor_id]
+    : undefined;
   const closed = thread?.status === 'closed';
-  const canSend = !sending && thread !== null && draft.trim() !== '' && !closed;
 
-  // Counselors above own their open threads — don't list the same
-  // conversation twice in the inbox. Remaining rows are legacy/closed threads.
-  const counselorThreadIds = new Set(
-    sessionCounselors
-      .map(
-        (c) =>
-          threads.find((t) => t.status === 'open' && t.counselor_id === c.counselorId)?.id,
-      )
-      .filter((id): id is string => typeof id === 'string'),
+  // One card per messageable counselor, then leftover/closed conversations.
+  // Open threads for a counselor are folded into that counselor's card so the
+  // same conversation never appears twice.
+  const inboxCards = useMemo<InboxCard[]>(() => {
+    const cards: InboxCard[] = [];
+
+    for (const entry of sessionCounselors) {
+      const openThread = threads.find(
+        (t) => t.status === 'open' && t.counselor_id === entry.counselorId,
+      );
+      const preview = openThread ? previews[openThread.id] : undefined;
+      const stamp = preview?.created_at ?? openThread?.updated_at ?? entry.scheduledAt;
+      cards.push({
+        key: `counselor-${entry.counselorId}`,
+        name: counselorNames[entry.counselorId] ?? 'Counselor',
+        subtitle: counselorSpecialties[entry.counselorId] ?? 'Guidance counselor',
+        preview: preview?.body ?? 'No messages yet — say hello',
+        mine: preview?.sender_profile_id === me?.profileId,
+        time: listStamp(stamp),
+        unread:
+          openThread !== undefined &&
+          preview !== undefined &&
+          preview.sender_profile_id !== me?.profileId &&
+          !seen[openThread.id],
+        closed: false,
+        sortAt: new Date(stamp).getTime(),
+        thread: openThread,
+        counselor: entry,
+      });
+    }
+
+    const claimedThreadIds = new Set(
+      cards
+        .map((card) => card.thread?.id)
+        .filter((id): id is string => typeof id === 'string'),
+    );
+
+    for (const item of threads.filter((t) => !claimedThreadIds.has(t.id))) {
+      const preview = previews[item.id];
+      const stamp = preview?.created_at ?? item.updated_at;
+      cards.push({
+        key: `thread-${item.id}`,
+        name: item.counselor_id
+          ? counselorNames[item.counselor_id] ?? 'Counselor'
+          : 'Guidance Office',
+        subtitle: item.status === 'closed' ? 'Previous conversation' : 'Conversation',
+        preview: preview?.body ?? 'No messages yet',
+        mine: preview?.sender_profile_id === me?.profileId,
+        time: listStamp(stamp),
+        unread:
+          item.status === 'open' &&
+          preview !== undefined &&
+          preview.sender_profile_id !== me?.profileId &&
+          !seen[item.id],
+        closed: item.status === 'closed',
+        sortAt: new Date(stamp).getTime(),
+        thread: item,
+      });
+    }
+
+    // Unread first, then most recent activity.
+    return cards.sort(
+      (a, b) => Number(b.unread) - Number(a.unread) || b.sortAt - a.sortAt,
+    );
+  }, [
+    counselorNames,
+    counselorSpecialties,
+    me?.profileId,
+    previews,
+    seen,
+    sessionCounselors,
+    threads,
+  ]);
+
+  const query = search.trim().toLowerCase();
+  const visibleCards =
+    query === ''
+      ? inboxCards
+      : inboxCards.filter((card) =>
+          `${card.name} ${card.subtitle} ${card.preview}`.toLowerCase().includes(query),
+        );
+  const counselorCards = visibleCards.filter((card) => card.counselor !== undefined);
+  const otherCards = visibleCards.filter((card) => card.counselor === undefined);
+  const unreadTotal = inboxCards.filter((card) => card.unread).length;
+
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distance = contentSize.height - layoutMeasurement.height - contentOffset.y;
+    const nearBottom = distance < 140;
+    stickToBottom.current = nearBottom;
+    if (nearBottom !== atBottom) setAtBottom(nearBottom);
+    if (nearBottom && awayCount !== 0) setAwayCount(0);
+  };
+
+  const jumpToLatest = () => {
+    stickToBottom.current = true;
+    setAtBottom(true);
+    setUserScrolled(false);
+    setAwayCount(0);
+    list.current?.scrollToEnd({ animated: true });
+  };
+
+  const renderInboxCard = (card: InboxCard) => (
+    <ConversationCard
+      key={card.key}
+      name={card.name}
+      subtitle={card.subtitle}
+      preview={card.preview}
+      previewPrefix={card.mine ? 'You: ' : undefined}
+      time={card.time}
+      unread={card.unread}
+      closed={card.closed}
+      busy={
+        card.counselor !== undefined &&
+        startingFor === card.counselor.counselorId
+      }
+      accessibilityHint={
+        card.counselor
+          ? counselorSpecialties[card.counselor.counselorId] ?? 'Guidance counselor'
+          : undefined
+      }
+      onPress={() => {
+        if (card.counselor) void openWithCounselor(card.counselor);
+        else if (card.thread) void openConversation(card.thread);
+      }}
+    />
   );
-  const otherThreads = threads.filter((t) => !counselorThreadIds.has(t.id));
 
   return (
     <View style={styles.root}>
       <SafeAreaView edges={['top', 'bottom']} style={styles.safe}>
-        <View style={styles.header}>
-          <IconButton
-            tone="plain"
-            label={view === 'thread' ? 'Back to conversations' : 'Go back'}
-            onPress={handleBack}
-          >
-            <ArrowLeft size={sizes.tabIcon} color={colors.white} />
-          </IconButton>
-          {view === 'thread' ? (
-            <>
-              <View
-                style={styles.avatar}
-                accessibilityElementsHidden
-                importantForAccessibility="no-hide-descendants"
-              >
-                <LumiFigure look={4} feel="happy" size={30} />
-              </View>
-              <View style={styles.who}>
-                <Text style={styles.whoName}>{who}</Text>
-                <Text style={styles.whoSub}>
-                  {closed ? 'Conversation closed' : 'Open conversation'}
-                </Text>
-              </View>
-            </>
-          ) : (
-            <View style={styles.who}>
-              <Text style={styles.whoName}>Messages</Text>
-              <Text style={styles.whoSub}>Your counselors</Text>
-            </View>
-          )}
-        </View>
-
         {view === 'list' ? (
-          loading ? (
-            <View style={styles.center}>
-              <ActivityIndicator color={colors.blue} />
-              <Text style={styles.helper}>Loading your conversationsâ€¦</Text>
-            </View>
-          ) : (
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={[
-                styles.inbox,
-                sessionCounselors.length === 0 &&
-                  otherThreads.length === 0 &&
-                  styles.inboxEmpty,
-              ]}
-            >
-              {error !== '' ? (
-                <View style={styles.inboxError}>
-                  <Text style={styles.errText}>{error}</Text>
-                  <Button
-                    label="Retry"
-                    variant="outline"
-                    onPress={() => {
-                      setError('');
-                      void loadInbox();
-                    }}
-                  />
-                </View>
-              ) : null}
+          <View style={styles.flex}>
+            <View style={styles.hero}>
+              <View pointerEvents="none" style={styles.heroSun} />
+              <View pointerEvents="none" style={styles.heroSky} />
 
-              {sessionCounselors.length > 0 ? (
-                <View>
-                  <View style={styles.sectionHead}>
-                    <Text style={styles.sectionEyebrow}>YOUR COUNSELORS</Text>
-                    <View style={styles.sectionCount}>
-                      <Text style={styles.sectionCountText}>{sessionCounselors.length}</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.sectionHint}>
-                    From your confirmed sessions · private to you two
-                  </Text>
-                  <View>
-                    {sessionCounselors.map((entry) => {
-                      const name = counselorNames[entry.counselorId] ?? 'Counselor';
-                      const openThreadForCounselor = threads.find(
-                        (t) => t.status === 'open' && t.counselor_id === entry.counselorId,
-                      );
-                      const preview = openThreadForCounselor
-                        ? previews[openThreadForCounselor.id]
-                        : undefined;
-                      const mine = preview?.sender_profile_id === me?.profileId;
-                      const busy = startingFor === entry.counselorId;
-                      return (
-                        <Pressable
-                          key={entry.counselorId}
-                          onPress={() => void openWithCounselor(entry)}
-                          disabled={opening}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Message ${name}`}
-                          accessibilityHint={
-                            counselorSpecialties[entry.counselorId] ?? 'Guidance counselor'
-                          }
-                          accessibilityState={{ disabled: opening }}
-                          style={({ pressed }) => [
-                            styles.threadRow,
-                            pressed && styles.rowPressed,
-                          ]}
-                        >
-                          <View style={styles.rowMain}>
-                            <View style={styles.rowTop}>
-                              <Text style={styles.rowName} numberOfLines={1}>
-                                {name}
-                              </Text>
-                              <Text style={styles.rowTime}>
-                                {listStamp(preview?.created_at ?? entry.scheduledAt)}
-                              </Text>
-                            </View>
-
-                            <View style={styles.rowTop}>
-                              <Text style={styles.rowPreview} numberOfLines={1}>
-                                {preview ? (
-                                  <>
-                                    {mine ? (
-                                      <Text style={styles.rowPreviewMine}>You: </Text>
-                                    ) : null}
-                                    {preview.body}
-                                  </>
-                                ) : (
-                                  'No messages yet — say hello'
-                                )}
-                              </Text>
-                              {busy ? (
-                                <ActivityIndicator color={colors.blue} />
-                              ) : (
-                                <Text style={styles.rowAction}>
-                                  {openThreadForCounselor ? 'Open' : 'Message'}
-                                </Text>
-                              )}
-                            </View>
-                          </View>
-                          <View style={styles.threadDivider} />
-                        </Pressable>
-                      );
-                    })}
-                  </View>
+              <View style={styles.heroTop}>
+                <View style={styles.flex}>
+                  <Text style={styles.heroEyebrow}>GUIDANCE OFFICE</Text>
+                  <Text style={styles.heroTitle}>Messages</Text>
                 </View>
-              ) : null}
-
-              {otherThreads.length > 0 ? (
-                <View>
-                  <View style={styles.sectionHead}>
-                    <Text style={styles.sectionEyebrow}>CONVERSATIONS</Text>
-                    <View style={styles.sectionCount}>
-                      <Text style={styles.sectionCountText}>{otherThreads.length}</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.sectionHint}>Ongoing and previous chats</Text>
-                  <View>
-                    {otherThreads.map((item) => {
-                      const name = item.counselor_id
-                        ? counselorNames[item.counselor_id] ?? 'Counselor'
-                        : 'Guidance Office';
-                      const preview = previews[item.id];
-                      const mine = preview?.sender_profile_id === me?.profileId;
-                      return (
-                        <Pressable
-                          key={item.id}
-                          onPress={() => void openConversation(item)}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Open conversation with ${name}`}
-                          style={({ pressed }) => [
-                            styles.threadRow,
-                            pressed && styles.rowPressed,
-                          ]}
-                        >
-                          <View style={styles.rowMain}>
-                            <View style={styles.rowTop}>
-                              <Text style={styles.rowName} numberOfLines={1}>
-                                {name}
-                              </Text>
-                              <Text style={styles.rowTime}>
-                                {listStamp(preview?.created_at ?? item.updated_at)}
-                              </Text>
-                            </View>
-                            <View style={styles.rowTop}>
-                              <Text style={styles.rowPreview} numberOfLines={1}>
-                                {preview ? (
-                                  <>
-                                    {mine ? (
-                                      <Text style={styles.rowPreviewMine}>You: </Text>
-                                    ) : null}
-                                    {preview.body}
-                                  </>
-                                ) : (
-                                  'No messages yet'
-                                )}
-                              </Text>
-                              {item.status === 'closed' ? (
-                                <View style={styles.closedPill}>
-                                  <Text style={styles.closedPillText}>Closed</Text>
-                                </View>
-                              ) : null}
-                            </View>
-                          </View>
-                          <View style={styles.threadDivider} />
-                        </Pressable>
-                      );
-                    })}
-                  </View>
+                <View style={styles.privatePill}>
+                  <Lock size={11} color={colors.ink} />
+                  <Text style={styles.privatePillText}>Private</Text>
                 </View>
-              ) : null}
+              </View>
 
-              {sessionCounselors.length === 0 &&
-              otherThreads.length === 0 &&
-              error === '' ? (
-                <View style={styles.empty}>
-                  <View style={styles.emptyIcon}>
-                    <MessageCircle size={26} color={colors.blue} />
-                  </View>
-                  <Text style={styles.emptyTitle}>
-                    {awaitingCounselor ? 'Waiting for confirmation' : 'No counselors to message yet'}
-                  </Text>
-                  <Text style={styles.emptyText}>
-                    {awaitingCounselor
-                      ? 'Your session request is with the Guidance Office. Once a counselor confirms it, they appear here.'
-                      : 'Once a counselor confirms your session, they show up here and you can chat privately.'}
-                  </Text>
-                  {awaitingCounselor ? (
-                    <Button
-                      label="View my sessions"
-                      onPress={() => router.push('/(tabs)/sessions')}
-                    />
-                  ) : (
-                    <Button label="Book a session" onPress={() => router.push('/book')} />
-                  )}
-                </View>
-              ) : null}
-            </ScrollView>
-          )
-        ) : (
-          <>
-            <View style={styles.banner}>
-              <Text style={styles.bannerText}>
-                You are chatting as {me?.alias ?? 'your alias'}. Your name stays hidden unless
-                safety requires it.
+              <Text style={styles.heroSub}>
+                Talk with the counselor who knows you — under your alias.
               </Text>
+
+              {unreadTotal > 0 ? (
+                <View style={styles.unreadPill}>
+                  <View style={styles.unreadDot} />
+                  <Text style={styles.unreadPillText}>
+                    {unreadTotal} new {unreadTotal === 1 ? 'reply' : 'replies'}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            <View style={styles.searchWrap}>
+              <SearchIcon size={15} color={colors.muted} />
+              <TextInput
+                value={search}
+                onChangeText={setSearch}
+                placeholder="Search counselors or messages"
+                placeholderTextColor={colors.muted}
+                style={styles.searchInput}
+                returnKeyType="search"
+                accessibilityLabel="Search conversations"
+                autoCorrect={false}
+              />
+              {search !== '' ? (
+                <Pressable
+                  onPress={() => setSearch('')}
+                  hitSlop={hitSlop}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear search"
+                  style={styles.searchClear}
+                >
+                  <X size={11} color={colors.muted} />
+                </Pressable>
+              ) : null}
+            </View>
+
+            {loading ? (
+              <View style={styles.center}>
+                <ActivityIndicator color={colors.blue} />
+                <Text style={styles.helper}>Loading your conversations…</Text>
+              </View>
+            ) : (
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                refreshControl={
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={() => void refreshInbox()}
+                    tintColor={colors.blue}
+                    colors={[colors.blue]}
+                  />
+                }
+                contentContainerStyle={[
+                  styles.inbox,
+                  visibleCards.length === 0 && styles.inboxEmpty,
+                ]}
+              >
+                {error !== '' ? (
+                  <View style={styles.errorCard}>
+                    <Text style={styles.errText}>{error}</Text>
+                    <Button
+                      label="Retry"
+                      variant="outline"
+                      onPress={() => {
+                        setError('');
+                        void loadInbox();
+                      }}
+                    />
+                  </View>
+                ) : null}
+
+                {query !== '' && visibleCards.length === 0 ? (
+                  <View style={styles.empty}>
+                    <View style={styles.emptyIcon}>
+                      <SearchIcon size={24} color={colors.blue} />
+                    </View>
+                    <Text style={styles.emptyTitle}>No matches</Text>
+                    <Text style={styles.emptyText}>
+                      Nothing here matches “{search.trim()}”. Try another name.
+                    </Text>
+                    <Button label="Clear search" variant="outline" onPress={() => setSearch('')} />
+                  </View>
+                ) : null}
+
+                {counselorCards.length > 0 ? (
+                  <View style={styles.section}>
+                    <View style={styles.sectionHead}>
+                      <View style={styles.sectionTitleRow}>
+                        <Text style={styles.sectionEyebrow}>YOUR CARE TEAM</Text>
+                        <View style={styles.sectionCount}>
+                          <Text style={styles.sectionCountText}>{counselorCards.length}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.sectionHint}>From your confirmed sessions</Text>
+                    </View>
+                    {counselorCards.map(renderInboxCard)}
+                  </View>
+                ) : null}
+
+                {otherCards.length > 0 ? (
+                  <View style={styles.section}>
+                    <View style={styles.sectionHead}>
+                      <View style={styles.sectionTitleRow}>
+                        <Text style={styles.sectionEyebrow}>CONVERSATIONS</Text>
+                        <View style={styles.sectionCount}>
+                          <Text style={styles.sectionCountText}>{otherCards.length}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.sectionHint}>Ongoing and previous chats</Text>
+                    </View>
+                    {otherCards.map(renderInboxCard)}
+                  </View>
+                ) : null}
+
+                {inboxCards.length === 0 && error === '' ? (
+                  <View style={styles.empty}>
+                    <View style={styles.emptyIconLumi}>
+                      <LumiFigure look={4} feel="happy" size={64} />
+                    </View>
+                    <Text style={styles.emptyTitle}>
+                      {awaitingCounselor
+                        ? 'Waiting for confirmation'
+                        : 'No counselors to message yet'}
+                    </Text>
+                    <Text style={styles.emptyText}>
+                      {awaitingCounselor
+                        ? 'Your session request is with the Guidance Office. Once a counselor confirms it, they appear here.'
+                        : 'Once a counselor confirms your session, they show up here and you can chat privately.'}
+                    </Text>
+                    {awaitingCounselor ? (
+                      <Button
+                        label="View my sessions"
+                        onPress={() => router.push('/(tabs)/sessions')}
+                      />
+                    ) : (
+                      <Button label="Book a session" onPress={() => router.push('/book')} />
+                    )}
+                  </View>
+                ) : null}
+
+                <View style={styles.inboxFooter}>
+                  <MessageCircle size={12} color={colors.muted} />
+                  <Text style={styles.inboxFooterText}>
+                    Only you and your counselor can read these messages.
+                  </Text>
+                </View>
+              </ScrollView>
+            )}
+          </View>
+        ) : (
+          <View style={styles.flex}>
+            <View style={styles.threadHeader}>
+              <View pointerEvents="none" style={styles.threadSun} />
+              <View style={styles.threadHeaderRow}>
+                <IconButton
+                  tone="plain"
+                  label="Back to conversations"
+                  onPress={handleBack}
+                  style={styles.backBtn}
+                >
+                  <ArrowLeft size={sizes.tabIcon} color={colors.ink} />
+                </IconButton>
+
+                <InitialsAvatar name={who} size={40} />
+
+                <View style={styles.who}>
+                  <Text style={styles.whoName} numberOfLines={1}>
+                    {who}
+                  </Text>
+                  <View style={styles.whoStatusRow}>
+                    <View style={[styles.statusDot, closed && styles.statusDotClosed]} />
+                    <Text style={styles.whoSub} numberOfLines={1}>
+                      {opening
+                        ? 'Opening conversation…'
+                        : closed
+                          ? 'Conversation closed'
+                          : whoSpecialty ?? 'Private conversation'}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.securePill}>
+                  <Lock size={10} color={colors.blue} />
+                  <Text style={styles.secureText}>Secure</Text>
+                </View>
+              </View>
             </View>
 
             <KeyboardAvoidingView
-              style={styles.flex}
+              style={styles.threadBody}
               behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
               keyboardVerticalOffset={0}
             >
+              {bannerOpen ? (
+                <View style={styles.privacyBanner}>
+                  <ShieldCheck size={15} color={colors.ink} />
+                  <Text style={styles.privacyText}>
+                    Chatting as <Text style={styles.privacyAlias}>{me?.alias ?? 'your alias'}</Text>.
+                    Your name stays hidden unless safety requires it.
+                  </Text>
+                  <Pressable
+                    onPress={() => setBannerOpen(false)}
+                    hitSlop={hitSlop}
+                    accessibilityRole="button"
+                    accessibilityLabel="Dismiss privacy notice"
+                  >
+                    <X size={13} color={colors.muted} />
+                  </Pressable>
+                </View>
+              ) : null}
+
               {opening ? (
                 <View style={styles.center}>
                   <ActivityIndicator color={colors.blue} />
-                  <Text style={styles.helper}>Opening conversationâ€¦</Text>
+                  <Text style={styles.helper}>Opening conversation…</Text>
                 </View>
               ) : (
-                <FlatList
-                  ref={list}
-                  data={messages}
-                  keyExtractor={(m) => m.id}
-                  showsVerticalScrollIndicator={false}
-                  keyboardShouldPersistTaps="handled"
-                  contentContainerStyle={[styles.list, messages.length === 0 && styles.listEmpty]}
-                  onContentSizeChange={scrollEnd}
-                  renderItem={({ item, index }) => {
-                    const previous = index > 0 ? messages[index - 1] : undefined;
-                    const showDay =
-                      !previous || !sameDay(previous.created_at, item.created_at);
-                    return (
-                      <View>
-                        {showDay ? (
-                          <View style={styles.dayRow}>
-                            <View style={styles.dayPill}>
-                              <Text style={styles.dayText}>{dayLabel(item.created_at)}</Text>
+                <View style={styles.listWrap}>
+                  <FlatList
+                    ref={list}
+                    data={messages}
+                    keyExtractor={(m) => m.id}
+                    showsVerticalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="interactive"
+                    onScroll={handleScroll}
+                    onScrollBeginDrag={() => setUserScrolled(true)}
+                    scrollEventThrottle={32}
+                    contentContainerStyle={[
+                      styles.list,
+                      messages.length === 0 && styles.listEmpty,
+                    ]}
+                    onContentSizeChange={() => {
+                      if (stickToBottom.current) scrollEnd();
+                    }}
+                    renderItem={({ item, index }) => {
+                      const previous = index > 0 ? messages[index - 1] : undefined;
+                      const next = index < messages.length - 1 ? messages[index + 1] : undefined;
+                      const mine = item.sender_profile_id === me?.profileId;
+                      const showDay =
+                        !previous || !sameDay(previous.created_at, item.created_at);
+                      const startsRun =
+                        !previous ||
+                        previous.sender_profile_id !== item.sender_profile_id ||
+                        !sameDay(previous.created_at, item.created_at);
+                      const endsRun =
+                        !next ||
+                        next.sender_profile_id !== item.sender_profile_id ||
+                        !sameDay(next.created_at, item.created_at);
+                      return (
+                        <View>
+                          {showDay ? (
+                            <View style={styles.dayRow}>
+                              <View style={styles.dayPill}>
+                                <Text style={styles.dayText}>
+                                  {dayLabel(item.created_at).toUpperCase()}
+                                </Text>
+                              </View>
                             </View>
-                          </View>
-                        ) : null}
-                        <ChatBubble
-                          mine={item.sender_profile_id === me?.profileId}
-                          text={item.body}
-                          time={timeOf(item.created_at)}
-                        />
+                          ) : null}
+                          <ChatBubble
+                            mine={mine}
+                            text={item.body}
+                            time={timeOf(item.created_at)}
+                            first={startsRun}
+                            last={endsRun}
+                            avatar={mine ? undefined : <InitialsAvatar name={who} size={24} />}
+                          />
+                        </View>
+                      );
+                    }}
+                    ListEmptyComponent={
+                      <View style={styles.emptyThread}>
+                        <View style={styles.emptyIconLumi}>
+                          <LumiFigure look={4} feel="happy" size={64} />
+                        </View>
+                        <Text style={styles.emptyTitle}>Say hello</Text>
+                        <Text style={styles.emptyText}>
+                          This thread is only visible to you and {who}. Introduce yourself
+                          whenever you are ready — no rush.
+                        </Text>
                       </View>
-                    );
-                  }}
-                  ListEmptyComponent={
-                    <View style={styles.empty}>
-                      <Text style={styles.emptyTitle}>Say hello</Text>
-                      <Text style={styles.emptyText}>
-                        This conversation is only visible to you and {who}. Your name stays hidden.
-                      </Text>
-                    </View>
-                  }
-                />
+                    }
+                    ListFooterComponent={
+                      messages.length > 0 ? (
+                        <View style={styles.threadFooter}>
+                          <Lock size={11} color={colors.muted} />
+                          <Text style={styles.threadFooterText}>
+                            Private thread · only you and {who}
+                          </Text>
+                        </View>
+                      ) : undefined
+                    }
+                  />
+
+                  {userScrolled && !atBottom ? (
+                    <PressableScale
+                      onPress={jumpToLatest}
+                      scaleTo={0.9}
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        awayCount > 0
+                          ? `Jump to latest, ${awayCount} new messages`
+                          : 'Jump to latest message'
+                      }
+                      style={styles.jump}
+                    >
+                      <ArrowDown size={16} color={colors.ink} />
+                      {awayCount > 0 ? (
+                        <View style={styles.jumpBadge}>
+                          <Text style={styles.jumpBadgeText}>
+                            {awayCount > 9 ? '9+' : awayCount}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </PressableScale>
+                  ) : null}
+                </View>
               )}
 
               {error !== '' ? (
-                <View style={styles.errRow}>
+                <View style={styles.errorRow}>
                   <Text style={styles.errText}>{error}</Text>
                   <Button
                     label="Retry"
@@ -736,149 +978,200 @@ export default function Chat() {
               ) : null}
 
               {closed ? (
-                <Text style={styles.closedNote}>
-                  This conversation is closed. Message your counselor from the list to start a new
-                  one.
-                </Text>
+                <View style={styles.closedCard}>
+                  <View style={styles.closedIcon}>
+                    <Lock size={15} color={colors.muted} />
+                  </View>
+                  <Text style={styles.closedText}>
+                    This conversation is closed. Pick your counselor from Messages to start a new
+                    one.
+                  </Text>
+                  <Button label="Back to messages" onPress={backToList} />
+                </View>
               ) : (
                 <>
-                  <View style={styles.quick}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                    style={styles.quickRow}
+                    contentContainerStyle={styles.quickContent}
+                  >
                     {QUICK_REPLIES.map((q) => (
-                      <Pressable
+                      <PressableScale
                         key={q}
                         onPress={() => void send(q)}
                         disabled={sending}
+                        scaleTo={0.96}
                         accessibilityRole="button"
+                        accessibilityLabel={`Send “${q}”`}
                         accessibilityState={{ disabled: sending }}
-                        style={styles.quickBtn}
+                        style={[styles.quickChip, sending && styles.quickChipOff]}
                       >
+                        <Sparkles size={11} color={colors.blue} />
                         <Text style={styles.quickText}>{q}</Text>
-                      </Pressable>
+                      </PressableScale>
                     ))}
-                  </View>
+                  </ScrollView>
 
-                  <View style={styles.composer}>
-                    <TextInput
-                      value={draft}
-                      onChangeText={setDraft}
-                      placeholder="Type a messageâ€¦"
-                      placeholderTextColor={colors.muted}
-                      style={styles.input}
-                      onSubmitEditing={() => void send(draft)}
-                      returnKeyType="send"
-                      editable={!sending}
-                    />
-                    <Pressable
-                      onPress={() => void send(draft)}
-                      disabled={!canSend}
-                      hitSlop={hitSlop}
-                      accessibilityRole="button"
-                      accessibilityLabel="Send message"
-                      accessibilityState={{ disabled: !canSend }}
-                      style={[styles.send, !canSend && styles.sendOff]}
-                    >
-                      <Send size={sizes.tabIcon} color={colors.ink} />
-                    </Pressable>
-                  </View>
+                  <Composer
+                    value={draft}
+                    onChangeText={setDraft}
+                    onSend={() => void send(draft)}
+                    sending={sending}
+                  />
                 </>
               )}
             </KeyboardAvoidingView>
-          </>
+          </View>
         )}
       </SafeAreaView>
 
-      {/* Same bottom navbar as the tabs â€” chat is a root stack screen. */}
+      {/* Same bottom navbar as the tabs — chat is a root stack screen. */}
       <TabBar />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.cream },
-  safe: { flex: 1, backgroundColor: colors.cream },
-  header: {
-    backgroundColor: colors.blue,
+  root: { flex: 1, backgroundColor: colors.white },
+  safe: { flex: 1, backgroundColor: colors.white },
+  flex: { flex: 1 },
+
+  /* ------------------------------- inbox ------------------------------- */
+
+  hero: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.lg,
+    overflow: 'hidden',
+    gap: spacing.xs,
+  },
+  heroSun: {
+    position: 'absolute',
+    top: -90,
+    right: -60,
+    width: 190,
+    height: 190,
+    borderRadius: 95,
+    backgroundColor: colors.sunSoft,
+    opacity: 0.75,
+  },
+  heroSky: {
+    position: 'absolute',
+    bottom: -90,
+    left: -70,
+    width: 170,
+    height: 170,
+    borderRadius: 85,
+    backgroundColor: colors.sky,
+    opacity: 0.7,
+  },
+  heroTop: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
   },
-  avatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.sky,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
+  heroEyebrow: {
+    fontFamily: fontFamily.bold,
+    fontSize: fontSize.xxs,
+    letterSpacing: 1.1,
+    color: colors.muted,
   },
-  who: { flex: 1 },
-  whoName: { fontFamily: fontFamily.bold, fontSize: fontSize.lg, color: colors.white },
-  whoSub: { fontFamily: fontFamily.regular, fontSize: fontSize.xs, color: colors.white },
-  banner: { backgroundColor: colors.sunSoft, padding: spacing.sm, paddingHorizontal: spacing.lg },
-  bannerText: { fontFamily: fontFamily.regular, fontSize: fontSize.sm, color: colors.ink },
-  flex: { flex: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
-  helper: { fontFamily: fontFamily.regular, fontSize: fontSize.sm, color: colors.muted },
-  list: { padding: spacing.lg, paddingBottom: spacing.md, gap: spacing.sm },
-  listEmpty: { flexGrow: 1, justifyContent: 'center' },
-  dayRow: { alignItems: 'center', paddingVertical: spacing.sm },
-  dayPill: {
-    backgroundColor: colors.chip,
-    borderRadius: radius,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
+  heroTitle: {
+    fontFamily: fontFamily.bold,
+    fontSize: fontSize.xl,
+    lineHeight: fontSize.xl + 4,
+    letterSpacing: -0.2,
+    color: colors.ink,
   },
-  dayText: { fontFamily: fontFamily.medium, fontSize: fontSize.xxs, color: colors.muted },
-  empty: {
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.xl,
-  },
-  emptyIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.sky,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.xs,
-  },
-  emptyTitle: { fontFamily: fontFamily.bold, fontSize: fontSize.lg, color: colors.ink },
-  emptyText: {
+  heroSub: {
     fontFamily: fontFamily.regular,
     fontSize: fontSize.sm,
     color: colors.muted,
-    textAlign: 'center',
+    maxWidth: '88%',
   },
-  inbox: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: TAB_BAR_BASE + spacing.lg,
+  privatePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+    borderRadius: radius + 8,
+    backgroundColor: colors.white,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    ...cardShadow,
   },
-  inboxEmpty: { flexGrow: 1, justifyContent: 'center', paddingBottom: TAB_BAR_BASE + spacing.xl },
-  inboxError: {
+  privatePillText: {
+    fontFamily: fontFamily.bold,
+    fontSize: fontSize.xxs,
+    color: colors.ink,
+  },
+  unreadPill: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius + 8,
+    backgroundColor: colors.sun,
+  },
+  unreadDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.ink },
+  unreadPillText: {
+    fontFamily: fontFamily.bold,
+    fontSize: fontSize.xxs,
+    color: colors.ink,
+  },
+  searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    paddingVertical: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.md,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...cardShadow,
   },
-  sectionHead: {
-    flexDirection: 'row',
+  searchInput: {
+    flex: 1,
+    paddingVertical: 0,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.md,
+    color: colors.ink,
+  },
+  searchClear: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.chip,
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.xs,
+    justifyContent: 'center',
   },
+  inbox: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xs,
+    paddingBottom: TAB_BAR_BASE + spacing.lg,
+  },
+  inboxEmpty: { flexGrow: 1, justifyContent: 'center' },
+  section: { marginTop: spacing.sm },
+  sectionHead: { paddingTop: spacing.sm, paddingBottom: spacing.sm, gap: 1 },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   sectionEyebrow: {
     fontFamily: fontFamily.bold,
     fontSize: fontSize.xxs,
-    letterSpacing: 0.8,
+    letterSpacing: 0.9,
     color: colors.muted,
   },
   sectionCount: {
     minWidth: 18,
-    borderRadius: radius,
+    borderRadius: radius + 6,
     backgroundColor: colors.sky,
     paddingHorizontal: spacing.xs,
     paddingVertical: 1,
@@ -894,48 +1187,66 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.regular,
     fontSize: fontSize.xs,
     color: colors.muted,
-    paddingBottom: spacing.sm,
   },
-  threadRow: {
+  inboxFooter: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.md,
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingTop: spacing.lg,
   },
-  // Hairline under every inbox row, spanning the 16px list gutter on both sides.
-  threadDivider: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.border,
+  inboxFooterText: {
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.xxs,
+    color: colors.muted,
   },
-  rowPressed: { backgroundColor: colors.chip },
-  rowMain: { flex: 1, gap: 2 },
-  rowTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  rowName: { flex: 1, fontFamily: fontFamily.bold, fontSize: fontSize.md, color: colors.ink },
-  rowTime: { fontFamily: fontFamily.medium, fontSize: fontSize.xxs, color: colors.muted },
-  rowPreview: {
-    flex: 1,
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
+  helper: { fontFamily: fontFamily.regular, fontSize: fontSize.sm, color: colors.muted },
+  empty: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.sm,
+  },
+  emptyThread: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.md,
+  },
+  emptyIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.sky,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyIconLumi: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: colors.sky,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  emptyTitle: { fontFamily: fontFamily.bold, fontSize: fontSize.lg, color: colors.ink },
+  emptyText: {
     fontFamily: fontFamily.regular,
     fontSize: fontSize.sm,
     color: colors.muted,
+    textAlign: 'center',
+    lineHeight: fontSize.sm + 5,
   },
-  rowPreviewMine: { fontFamily: fontFamily.medium, color: colors.muted },
-  rowAction: { fontFamily: fontFamily.bold, fontSize: fontSize.xs, color: colors.blue },
-  closedPill: {
-    borderRadius: radius,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 1,
-    backgroundColor: colors.disabledBg,
-  },
-  closedPillText: { fontFamily: fontFamily.bold, fontSize: fontSize.xxs, color: colors.muted },
-  errRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  errorCard: {
     gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.sm,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderRadius: 16,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.danger,
   },
   errText: {
     flex: 1,
@@ -943,62 +1254,225 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     color: colors.danger,
   },
-  closedNote: {
-    fontFamily: fontFamily.regular,
-    fontSize: fontSize.sm,
-    color: colors.muted,
-    padding: spacing.lg,
-    paddingBottom: TAB_BAR_BASE,
-    textAlign: 'center',
-  },
-  quick: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
+
+  /* ------------------------------ thread ------------------------------- */
+
+  threadHeader: {
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
-  },
-  // Plain outline buttons â€” no card/shadow treatment on the composer actions.
-  quickBtn: {
-    borderRadius: buttonRadius,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-  },
-  quickText: { fontFamily: fontFamily.medium, fontSize: fontSize.sm, color: colors.blue },
-  composer: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    padding: spacing.lg,
-    // Leave room for the absolute TabBar rendered over the screen.
-    marginBottom: TAB_BAR_BASE,
     backgroundColor: colors.white,
-    borderTopWidth: 1,
-    borderTopColor: colors.creamLine,
+    overflow: 'hidden',
+  },
+  threadSun: {
+    position: 'absolute',
+    top: -110,
+    right: -50,
+    width: 170,
+    height: 170,
+    borderRadius: 85,
+    backgroundColor: colors.sunSoft,
+    opacity: 0.6,
+  },
+  threadHeaderRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.sm,
   },
-  input: {
-    flex: 1,
-    height: sizes.buttonHeight,
-    borderRadius: buttonRadius,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 0,
-    fontFamily: fontFamily.regular,
-    fontSize: fontSize.md,
-    color: colors.ink,
-    textAlignVertical: 'center',
-    includeFontPadding: false,
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.chip,
   },
-  send: {
-    width: sizes.buttonHeight,
-    height: sizes.buttonHeight,
-    borderRadius: radius,
+  who: { flex: 1, gap: 1 },
+  whoName: { fontFamily: fontFamily.bold, fontSize: fontSize.lg, color: colors.ink },
+  whoStatusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
     backgroundColor: colors.sun,
+  },
+  statusDotClosed: { backgroundColor: colors.muted },
+  whoSub: {
+    fontFamily: fontFamily.medium,
+    fontSize: fontSize.xs,
+    color: colors.muted,
+  },
+  securePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius + 6,
+    backgroundColor: colors.sky,
+  },
+  secureText: {
+    fontFamily: fontFamily.bold,
+    fontSize: fontSize.xxs,
+    color: colors.blue,
+    letterSpacing: 0.3,
+  },
+  threadBody: {
+    flex: 1,
+    backgroundColor: colors.chip,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+  },
+  privacyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 14,
+    backgroundColor: colors.sunSoft,
+  },
+  privacyText: {
+    flex: 1,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.xs,
+    lineHeight: fontSize.xs + 4,
+    color: colors.ink,
+  },
+  privacyAlias: { fontFamily: fontFamily.bold },
+  listWrap: { flex: 1 },
+  list: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+  },
+  listEmpty: { flexGrow: 1, justifyContent: 'center' },
+  dayRow: { alignItems: 'center', paddingVertical: spacing.sm },
+  dayPill: {
+    backgroundColor: colors.white,
+    borderRadius: radius + 6,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  dayText: {
+    fontFamily: fontFamily.bold,
+    fontSize: fontSize.xxs,
+    letterSpacing: 0.6,
+    color: colors.muted,
+  },
+  threadFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xs,
+  },
+  threadFooterText: {
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.xxs,
+    color: colors.muted,
+  },
+  jump: {
+    position: 'absolute',
+    right: spacing.md,
+    bottom: spacing.sm,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: colors.white,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.ink,
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+  },
+  jumpBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 9,
+    paddingHorizontal: 3,
+    backgroundColor: colors.danger,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sendOff: { backgroundColor: colors.disabledBg },
+  jumpBadgeText: {
+    fontFamily: fontFamily.bold,
+    fontSize: fontSize.xxs,
+    color: colors.white,
+  },
+  errorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: 14,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.danger,
+  },
+  closedCard: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.sm,
+    padding: spacing.lg,
+    borderRadius: 20,
+    backgroundColor: colors.white,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    marginBottom: TAB_BAR_BASE + spacing.sm,
+    ...cardShadow,
+  },
+  closedIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.disabledBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closedText: {
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.sm,
+    color: colors.muted,
+    textAlign: 'center',
+    lineHeight: fontSize.sm + 5,
+  },
+  quickRow: {
+    flexGrow: 0,
+    marginTop: spacing.xs,
+  },
+  quickContent: {
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  quickChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.sky,
+  },
+  quickChipOff: { opacity: 0.5 },
+  quickText: {
+    fontFamily: fontFamily.medium,
+    fontSize: fontSize.sm,
+    color: colors.blue,
+  },
 });

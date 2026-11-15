@@ -80,6 +80,9 @@ export async function submitPss10(
 
 /**
  * Admin assigns (or clears with null) a counselor.
+ * A counselor may only receive work they are actually free for: bookings must
+ * not be paused, and the requested window must sit inside their published
+ * availability slots (same scope gate as confirm/reschedule).
  * pending/assigned + counselor  -> assigned
  * assigned + null               -> pending (unassign)
  */
@@ -103,6 +106,35 @@ export async function assignAppointment(
       throw new Error(
         "That counselor has paused bookings — pick an available counselor, or ask them to switch bookings back on."
       );
+    }
+    // A head may only hand work to a counselor whose published windows cover
+    // the requested time (same scope gate the counselor confirm path uses).
+    // Pending requests carry no counselor, so this is the first point the
+    // requested window is checked against someone's availability.
+    const { data: target, error: targetError } = await db
+      .from("appointments")
+      .select("scheduled_at, ends_at")
+      .eq("id", appointmentId)
+      .maybeSingle();
+    if (targetError) throw targetError;
+    if (!target) throw new Error("Session not found.");
+    const targetRow = target as { scheduled_at: string; ends_at: string | null };
+    const startMs = new Date(targetRow.scheduled_at).getTime();
+    if (Number.isFinite(startMs)) {
+      const endMs = targetRow.ends_at
+        ? new Date(targetRow.ends_at).getTime()
+        : startMs + DEFAULT_SESSION_MS;
+      const slots = await getCounselorSlots(db, counselorId);
+      if (!slots.length) {
+        throw new Error(
+          "That counselor has no availability windows yet — ask them to publish one, then assign again."
+        );
+      }
+      if (!fitsAvailabilitySlot(slots, startMs, endMs)) {
+        throw new Error(
+          "That time sits outside this counselor's availability windows — pick a counselor who is free then, or ask them to publish that window."
+        );
+      }
     }
     const { data, error } = await db
       .from("appointments")

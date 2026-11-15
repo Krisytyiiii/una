@@ -6,13 +6,14 @@ import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { removeAvatar, uploadAvatar } from "@dorsu/shared-services";
-import { SETTINGS_BOARD_KEY, useSettingsBoard } from "@/lib/hooks/use-settings-board";
+import { SETTINGS_BOARD_KEY, useSettingsBoard, type AcademicProgram, type AcademicYearLevel } from "@/lib/hooks/use-settings-board";
 import { useAvatarUrl } from "@/lib/hooks/use-avatar-url";
-import { Activity, ChevronRight, ShieldAlert, ShieldCheck, Sparkles, User, Users } from "lucide-react";
+import { Activity, ChevronRight, GraduationCap, ShieldAlert, ShieldCheck, Sparkles, User, Users } from "lucide-react";
 import { ProfileAbout, ProfileForm, type ProfileChecklistItem } from "@/components/settings/ProfileForm";
 import { PasswordForm } from "@/components/settings/PasswordForm";
 import { WorkspaceForm, WorkspaceOverview } from "@/components/settings/WorkspaceOverview";
 import { ActivitySection, TeamSection } from "@/components/settings/TeamList";
+import { AcademicsManager } from "@/components/settings/AcademicsManager";
 import { cn } from "@/lib/utils";
 
 type Counselor = { id: string; name: string; spec: string | null; available: boolean; sessions: number };
@@ -22,6 +23,8 @@ type Post = { id: string; title: string; created_at: string; published_at: strin
 const EMPTY_COUNSELORS: Counselor[] = [];
 const EMPTY_FEED: FeedItem[] = [];
 const EMPTY_POSTS: Post[] = [];
+const EMPTY_PROGRAMS: AcademicProgram[] = [];
+const EMPTY_YEAR_LEVELS: AcademicYearLevel[] = [];
 const EMPTY_GLANCE = { sessionsToday: 0, openReferrals: 0, published: 0 };
 
 type TabDef = { value: string; label: string; description: string; count?: number; icon: typeof User };
@@ -44,6 +47,8 @@ export default function SettingsPage() {
   const feed = board?.feed ?? EMPTY_FEED;
   const posts = board?.posts ?? EMPTY_POSTS;
   const glance = board?.glance ?? EMPTY_GLANCE;
+  const academicPrograms = board?.academicPrograms ?? EMPTY_PROGRAMS;
+  const academicYearLevels = board?.academicYearLevels ?? EMPTY_YEAR_LEVELS;
   const loading = isLoading && !board;
   const { data: avatarDisplay = null } = useAvatarUrl(board?.avatarUrl);
   // Editable copies — seeded from the cache once per visit so typing never
@@ -264,6 +269,82 @@ export default function SettingsPage() {
     }
   };
 
+  /** Head-managed signup picklist (00080) — add/remove courses and year levels. */
+  const addProgram = async (faculty: string, label: string) => {
+    if (!isHead) return;
+    const name = label.trim();
+    const fac = faculty.trim();
+    if (name.length < 2) {
+      toast.error("Course name needs at least 2 characters.");
+      return;
+    }
+    if (!fac) {
+      toast.error("Choose the faculty this course belongs to.");
+      return;
+    }
+    setSaving("academics");
+    try {
+      const nextSort =
+        Math.max(0, ...academicPrograms.filter((p) => p.faculty === fac).map((p) => p.sortOrder)) + 10;
+      const { error } = await createClient()
+        .from("academic_options")
+        .insert({ kind: "program", faculty: fac, label: name, sort_order: nextSort });
+      if (error) throw error;
+      void qc.invalidateQueries({ queryKey: [...SETTINGS_BOARD_KEY] });
+      toast.success("Course added — it appears in student signup right away.");
+    } catch (e) {
+      toast.error(
+        e instanceof Error && /duplicate|unique/i.test(e.message)
+          ? "That course is already on the list."
+          : "Couldn't add the course — please try again."
+      );
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const addYearLevel = async (label: string) => {
+    if (!isHead) return;
+    const name = label.trim();
+    if (!name) {
+      toast.error("Year level can't be empty.");
+      return;
+    }
+    setSaving("academics");
+    try {
+      const nextSort = Math.max(0, ...academicYearLevels.map((y) => y.sortOrder)) + 10;
+      const { error } = await createClient()
+        .from("academic_options")
+        .insert({ kind: "year_level", faculty: null, label: name, sort_order: nextSort });
+      if (error) throw error;
+      void qc.invalidateQueries({ queryKey: [...SETTINGS_BOARD_KEY] });
+      toast.success("Year level added — it appears in student signup right away.");
+    } catch (e) {
+      toast.error(
+        e instanceof Error && /duplicate|unique/i.test(e.message)
+          ? "That year level is already on the list."
+          : "Couldn't add the year level — please try again."
+      );
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const removeAcademicOption = async (id: string, label: string) => {
+    if (!isHead) return;
+    setSaving("academics");
+    try {
+      const { error } = await createClient().from("academic_options").delete().eq("id", id);
+      if (error) throw error;
+      void qc.invalidateQueries({ queryKey: [...SETTINGS_BOARD_KEY] });
+      toast.success(`Removed “${label}”.`);
+    } catch {
+      toast.error("Couldn't remove that option — please try again.");
+    } finally {
+      setSaving(null);
+    }
+  };
+
   const finishSetup = () => {
     setTab("overview");
     setEditing(true);
@@ -298,7 +379,16 @@ export default function SettingsPage() {
   const tabDefs: TabDef[] = [
     { value: "overview", label: "Overview", description: "Identity & directory", icon: User },
     ...(isHead
-      ? [{ value: "team", label: "Team", description: "Counselors and load", count: counselors.length, icon: Users }]
+      ? [
+          { value: "team", label: "Team", description: "Counselors and load", count: counselors.length, icon: Users },
+          {
+            value: "academics",
+            label: "Academics",
+            description: "Courses & year levels",
+            count: academicPrograms.length + academicYearLevels.length,
+            icon: GraduationCap,
+          },
+        ]
       : []),
     { value: "activity", label: "Activity", description: "Your recent actions", count: feed.length, icon: Activity },
     { value: "security", label: "Security", description: "Password & email", icon: ShieldCheck },
@@ -459,6 +549,18 @@ export default function SettingsPage() {
           )}
 
           {isHead && tab === "team" && <TeamSection loading={loading} counselors={counselors} />}
+
+          {isHead && tab === "academics" && (
+            <AcademicsManager
+              loading={loading}
+              saving={saving === "academics"}
+              programs={academicPrograms}
+              yearLevels={academicYearLevels}
+              onAddProgram={(faculty, label) => void addProgram(faculty, label)}
+              onAddYearLevel={(label) => void addYearLevel(label)}
+              onRemove={(id, label) => void removeAcademicOption(id, label)}
+            />
+          )}
 
           {tab === "activity" && <ActivitySection loading={loading} feed={feed} />}
 

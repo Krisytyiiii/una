@@ -98,6 +98,9 @@ export type StudentRow = {
   year_level: string | null;
   college: string | null;
   contact_no: string | null;
+  // Added by hand (00079) — optional signup demographics for the referral form.
+  gender: "male" | "female" | "prefer_not_to_say" | null;
+  birthdate: string | null;
   anonymous_alias: string | null;
   created_at: string;
 };
@@ -294,6 +297,18 @@ export type WorkspaceSettingsRow = {
   updated_at: string;
 };
 
+/** Head-managed picklist for student signup (00080). */
+export type AcademicOptionRow = {
+  id: string;
+  kind: "program" | "year_level";
+  faculty: string | null;
+  label: string;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 export type NotificationRow = {
   id: string;
   profile_id: string;
@@ -323,6 +338,8 @@ export type AnnouncementRow = {
   body: string;
   audience: UserRole[] | null; // null = everyone
   image_url: string | null;
+  /** Optional event date (dictionary §4, migration 00020). */
+  event_date: string | null;
   published_at: string | null;
   created_at: string;
 };
@@ -415,6 +432,7 @@ export interface Database {
       chat_messages: { Row: ChatMessageRow; Insert: Partial<ChatMessageRow>; Update: Partial<ChatMessageRow>; Relationships: [] };
       staff_messages: { Row: StaffMessageRow; Insert: Partial<StaffMessageRow>; Update: Partial<StaffMessageRow>; Relationships: [] };
       workspace_settings: { Row: WorkspaceSettingsRow; Insert: Partial<WorkspaceSettingsRow>; Update: Partial<WorkspaceSettingsRow>; Relationships: [] };
+      academic_options: { Row: AcademicOptionRow; Insert: Partial<AcademicOptionRow>; Update: Partial<AcademicOptionRow>; Relationships: [] };
       notifications: { Row: NotificationRow; Insert: Partial<NotificationRow>; Update: Partial<NotificationRow>; Relationships: [] };
       announcements: { Row: AnnouncementRow; Insert: Partial<AnnouncementRow>; Update: Partial<AnnouncementRow>; Relationships: [] };
       referrals: { Row: ReferralRow; Insert: Partial<ReferralRow>; Update: Partial<ReferralRow>; Relationships: [] };
@@ -512,6 +530,22 @@ export interface Database {
           student_no: string;
           program: string | null;
           year_level: string | null;
+        }[];
+      };
+      // Added by hand (00078/00079) — bounded name/number search for the
+      // referral creator. Min 2 chars, 8 rows, referral-creator roles only.
+      // age_years is derived from birthdate when it was provided at signup.
+      search_students_for_referral: {
+        Args: { p_query: string };
+        Returns: {
+          id: string;
+          display_name: string;
+          student_no: string;
+          program: string | null;
+          year_level: string | null;
+          gender: string | null;
+          age_years: number | null;
+          anonymous_alias: string | null;
         }[];
       };
       get_referral_student: {

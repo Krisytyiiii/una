@@ -10,6 +10,7 @@ import {
   fetchAppointmentCard,
   patchAppointmentRow,
   useAppointmentsBoard,
+  type BoardSlot,
 } from "@/lib/hooks/use-appointments-board";
 import { clampPage, clampPageSize } from "@/lib/pagination";
 import { useMutationAction } from "@/lib/hooks/use-mutation-action";
@@ -35,6 +36,7 @@ const EMPTY_APPTS: Appt[] = [];
 const EMPTY_MAP = new Map<string, string>();
 const EMPTY_IDS: string[] = [];
 const EMPTY_COUNSELORS: CounselorOpt[] = [];
+const EMPTY_SLOTS_BY_COUNSELOR = new Map<string, BoardSlot[]>();
 const EMPTY_STATS = { total: 0, pending: 0, assigned: 0, confirmed: 0, completed: 0, unassigned: 0 };
 const EMPTY_KIND = { appointments: 0, followups: 0 };
 
@@ -124,6 +126,7 @@ function AppointmentsPageInner() {
   const headIds = board?.headIds ?? EMPTY_IDS;
   const counselors = board?.counselors ?? EMPTY_COUNSELORS;
   const slots = board?.slots ?? [];
+  const slotsByCounselor = board?.slotsByCounselor ?? EMPTY_SLOTS_BY_COUNSELOR;
   const busyWindows = board?.busyWindows ?? [];
   const loading = isLoading && !board;
   // Page/filter/size changes keep the previous page in cache (keepPreviousData),
@@ -544,6 +547,7 @@ function AppointmentsPageInner() {
           counselorFilter={counselorFilter} setCounselorFilter={pickCounselor}
           counselors={counselors} aliases={aliases} role={role}
           slots={slots}
+          slotsByCounselor={slotsByCounselor}
           busyId={busyId} canAssign={canAssign} canReject={canReject} isCounselor={isCounselor} canSeeActions={canSeeActions}
           counselorName={counselorName} openMenuKey={openMenuKey} setOpenMenuKey={setOpenMenuKey}
           onAssign={handleAssign} onDetail={setDetail} onConfirming={setConfirming}

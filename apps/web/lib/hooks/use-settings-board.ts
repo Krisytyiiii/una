@@ -20,6 +20,10 @@ export type SettingsFeedItem = {
 
 export type SettingsPost = { id: string; title: string; created_at: string; published_at: string | null };
 
+/** Head-managed signup picklist (00080). */
+export type AcademicProgram = { id: string; faculty: string; label: string; sortOrder: number };
+export type AcademicYearLevel = { id: string; label: string; sortOrder: number };
+
 export type SettingsBoardData = {
   me: string | null;
   role: string | null;
@@ -30,6 +34,8 @@ export type SettingsBoardData = {
   joined: string;
   authEmail: string | null;
   office: { name: string; location: string; contact: string };
+  academicPrograms: AcademicProgram[];
+  academicYearLevels: AcademicYearLevel[];
   counselors: SettingsCounselor[];
   posts: SettingsPost[];
   glance: { sessionsToday: number; openReferrals: number; published: number };
@@ -52,12 +58,33 @@ export async function fetchSettingsBoard(): Promise<SettingsBoardData> {
   } = await supabase.auth.getUser();
   if (!user) throw new Error("Sign in required.");
 
-  const [{ data: profile }, { data: office }] = await Promise.all([
+  const [{ data: profile }, { data: office }, { data: academicRows }] = await Promise.all([
     supabase.from("profiles").select("email, full_name, avatar_url, created_at, role").eq("id", user.id).single(),
     supabase.from("workspace_settings").select("value").eq("key", "office").maybeSingle(),
+    supabase
+      .from("academic_options")
+      .select("id, kind, faculty, label, sort_order")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true })
+      .order("label", { ascending: true }),
   ]);
   const p = profile as { email: string; full_name: string | null; avatar_url: string | null; created_at: string; role: string | null } | null;
   const v = (office as { value: { name?: string; location?: string; contact?: string } } | null)?.value;
+  const academic = (academicRows ?? []) as {
+    id: string;
+    kind: "program" | "year_level";
+    faculty: string | null;
+    label: string;
+    sort_order: number;
+  }[];
+  const academicPrograms = academic
+    .filter((a) => a.kind === "program" && a.faculty)
+    .map((a) => ({ id: a.id, faculty: a.faculty as string, label: a.label, sortOrder: a.sort_order }))
+    .sort((a, b) => a.faculty.localeCompare(b.faculty) || a.sortOrder - b.sortOrder || a.label.localeCompare(b.label));
+  const academicYearLevels = academic
+    .filter((a) => a.kind === "year_level")
+    .map((a) => ({ id: a.id, label: a.label, sortOrder: a.sort_order }))
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label));
 
   const [
     { data: counselorRows },
@@ -125,6 +152,8 @@ export async function fetchSettingsBoard(): Promise<SettingsBoardData> {
     joined: p?.created_at ?? "",
     authEmail: user.email ?? null,
     office: { name: v?.name ?? "", location: v?.location ?? "", contact: v?.contact ?? "" },
+    academicPrograms,
+    academicYearLevels,
     counselors: crows.map((c) => ({
       id: c.id,
       name: names.get(c.profile_id) ?? "Counselor",

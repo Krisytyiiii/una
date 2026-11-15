@@ -8,18 +8,18 @@ import { NotificationsProvider } from '@/lib/notifications-context';
 import { SessionReminderBanner } from '@/components/SessionReminderBanner';
 import {
   useFonts,
-  DMSans_400Regular,
-  DMSans_500Medium,
-  DMSans_700Bold,
-} from '@expo-google-fonts/dm-sans';
+  Roboto_400Regular,
+  Roboto_500Medium,
+  Roboto_700Bold,
+} from '@expo-google-fonts/roboto';
 
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
-    DMSans_400Regular,
-    DMSans_500Medium,
-    DMSans_700Bold,
+    Roboto_400Regular,
+    Roboto_500Medium,
+    Roboto_700Bold,
   });
   const [timedOut, setTimedOut] = useState(false);
 
@@ -48,9 +48,20 @@ export default function RootLayout() {
             screenOptions={{
               headerShown: false,
               animation: 'slide_from_right',
-              contentStyle: { backgroundColor: colors.cream },
+              contentStyle: { backgroundColor: colors.white },
             }}
-          />
+          >
+            {/* Dock destinations and anything that returns to the dock switch
+                with zero animation, so tapping a tab paints immediately. A
+                native-stack pop animates the screen being dismissed, so each
+                of these also needs its own `none`. */}
+            <Stack.Screen name="(tabs)" options={{ animation: 'none' }} />
+            <Stack.Screen name="book" options={{ animation: 'none' }} />
+            <Stack.Screen name="chat" options={{ animation: 'none' }} />
+            <Stack.Screen name="check-in" options={{ animation: 'none' }} />
+            <Stack.Screen name="notifications" options={{ animation: 'none' }} />
+            <Stack.Screen name="announcements" options={{ animation: 'none' }} />
+          </Stack>
           {/* Root-level so the 30-minute session reminder shows on every screen. */}
           <SessionReminderBanner />
         </View>

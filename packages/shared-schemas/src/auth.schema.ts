@@ -20,11 +20,38 @@ export const registerStudentSchema = z.object({
     ),
   studentNo: z
     .string()
-    .min(4, "Student number is required")
-    .max(32)
-    .regex(/^[A-Za-z0-9-]+$/, "Letters, numbers and dashes only"),
+    .trim()
+    // DOrSU student numbers are year-prefixed: 20YY-XXXX (e.g. 2021-0001).
+    .regex(/^20\d{2}-\d{4}$/, "Use the format 20YY-XXXX (e.g. 2021-0001)"),
   program: z.string().min(2, "Program is required").max(120),
   yearLevel: z.string().min(1, "Year level is required").max(32),
+  /**
+   * Optional demographic fields (00079). The official referral form asks for
+   * gender + age; filling them once at signup lets the referral form autofill
+   * instead of making faculty retype them. Blank = not provided.
+   */
+  gender: z.enum(["male", "female", "prefer_not_to_say"]).optional(),
+  birthdate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD for the birthdate")
+    // Round-trip through UTC so impossible dates (Feb 30, Apr 31) are rejected
+    // instead of silently rolling over into the next month.
+    .refine((value) => {
+      const [year, month, day] = value.split("-").map(Number);
+      const date = new Date(Date.UTC(year, month - 1, day));
+      return (
+        date.getUTCFullYear() === year &&
+        date.getUTCMonth() === month - 1 &&
+        date.getUTCDate() === day
+      );
+    }, "That date doesn't exist — check the month and day")
+    // Student records start at the 2000 cohort.
+    .refine((value) => Number(value.slice(0, 4)) >= 2000, "Birth year must be 2000 or later")
+    .refine(
+      (value) => new Date(`${value}T00:00:00Z`).getTime() <= Date.now(),
+      "Birthdate can't be in the future",
+    )
+    .optional(),
 });
 export type RegisterStudentInput = z.infer<typeof registerStudentSchema>;
 

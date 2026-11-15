@@ -18,3 +18,9 @@ site_url = "http://localhost:3000"
 additional_redirect_urls = ["http://localhost:3000/**", "exp://**", "dorsu-mental://**"]
 jwt_expiry = 3600
 enable_signup = true
+
+[auth.email]
+# The mobile activation screen expects exactly 6 digits (register.tsx).
+# Supabase allows 6-10; keep this in sync with the hosted project setting.
+otp_length = 6
+otp_expiry = 3600

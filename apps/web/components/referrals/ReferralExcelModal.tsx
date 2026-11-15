@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, X } from "lucide-react";
+import { Check, CheckCircle2, Loader2, Lock, Search, X } from "lucide-react";
 import type { CreateReferralInput } from "@dorsu/shared-schemas";
 import { createReferral } from "@dorsu/shared-services";
 import { createClient } from "@/lib/supabase/client";
@@ -39,6 +40,29 @@ async function fetchLogoBase64(): Promise<string | null> {
 }
 
 const labelCls = "mb-1 block text-xs font-bold text-ink-muted";
+
+/**
+ * One row of public.search_students_for_referral (00078) — name search for the
+ * referral creator. Bounded server-side (min 2 chars, 8 rows, role-gated).
+ */
+type StudentMatch = {
+  id: string;
+  display_name: string;
+  student_no: string;
+  program: string | null;
+  year_level: string | null;
+  /** From the student's mobile signup (00079). Null when not provided. */
+  gender: string | null;
+  age_years: number | null;
+  anonymous_alias: string | null;
+};
+
+/** Students store a lowercase enum; the paper form prints a label. */
+const GENDER_LABEL: Record<string, string> = {
+  male: "Male",
+  female: "Female",
+  prefer_not_to_say: "Prefer not to say",
+};
 
 /**
  * Faculty fill-up modal — type the student's details exactly as they appear
@@ -78,6 +102,15 @@ export function ReferralExcelModal({
   const [busy, setBusy] = useState<null | "excel" | "pdf" | "refer">(null);
   const [menuKey, setMenuKey] = useState<string | null>(null);
   const [step, setStep] = useState<"fill" | "preview">("fill");
+  // Linked student account (name search). Null = walk-in typed by hand.
+  const [selected, setSelected] = useState<StudentMatch | null>(null);
+  const [matches, setMatches] = useState<StudentMatch[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  // Set when 00078 has not been applied yet — the field quietly stays manual.
+  const [searchUnavailable, setSearchUnavailable] = useState(false);
+  const searchSeq = useRef(0);
   const qc = useQueryClient();
 
   // Reset + prefill each time the modal opens.
@@ -99,7 +132,72 @@ export function ReferralExcelModal({
     setBusy(null);
     setMenuKey(null);
     setStep("fill");
+    setSelected(null);
+    setMatches([]);
+    setSearching(false);
+    setSearchOpen(false);
+    setActiveIndex(-1);
+    setSearchUnavailable(false);
   }, [open, myName]);
+
+  // Debounced account search — name substring or I.D. prefix, min 2 chars.
+  // Selecting a row links the referral to that account; typing stays manual
+  // (most referred students have no account yet). Stale responses are dropped
+  // by sequence number, and a missing RPC (migration 00078 not pushed) just
+  // disables suggestions for this session instead of erroring at the user.
+  useEffect(() => {
+    if (!open) return;
+    const term = studentName.trim();
+    const linked = selected !== null && term === selected.display_name;
+    if (linked || searchUnavailable || term.length < 2) {
+      setMatches([]);
+      setSearchOpen(false);
+      setSearching(false);
+      return;
+    }
+    const seq = ++searchSeq.current;
+    setSearching(true);
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const { data, error } = await createClient().rpc("search_students_for_referral", { p_query: term });
+          if (seq !== searchSeq.current) return;
+          if (error) {
+            setSearchUnavailable(true);
+            setMatches([]);
+            setSearchOpen(false);
+            return;
+          }
+          const rows = (data ?? []) as StudentMatch[];
+          setMatches(rows);
+          setActiveIndex(rows.length ? 0 : -1);
+          setSearchOpen(rows.length > 0);
+        } catch {
+          if (seq === searchSeq.current) setSearchUnavailable(true);
+        } finally {
+          if (seq === searchSeq.current) setSearching(false);
+        }
+      })();
+    }, 280);
+    return () => clearTimeout(timer);
+  }, [open, studentName, selected, searchUnavailable]);
+
+  const pickStudent = (m: StudentMatch) => {
+    setStudentName(m.display_name);
+    setStudentNo(m.student_no);
+    const course = [m.program, m.year_level].filter(Boolean).join(" ").trim();
+    if (course) setCourseYear(course);
+    // Demographics come from the student's own mobile signup (00079) — only
+    // written when they provided them, so manual entry stays possible.
+    const genderLabel = m.gender ? GENDER_LABEL[m.gender] : undefined;
+    if (genderLabel) setGender(genderLabel);
+    if (typeof m.age_years === "number" && m.age_years > 0) setAge(String(m.age_years));
+    setSelected(m);
+    setMatches([]);
+    setSearchOpen(false);
+    setActiveIndex(-1);
+    setErrors((er) => ({ ...er, student: "", studentNo: "" }));
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -244,15 +342,21 @@ export function ReferralExcelModal({
     if (busy || !validate()) return;
     setBusy("refer");
     try {
-      // 00069: exact-match lookup only. Most referred students have no account
-      // yet, so a miss files as a walk-in under the typed name/number. There is
-      // no browse-all list to search or enumerate.
+      // A picked search result is already an account — use it directly.
+      // Otherwise fall back to 00069's exact student-number lookup: most
+      // referred students have no account yet, so a miss files as a walk-in
+      // under the typed name/number. There is no browse-all list.
       const supabase = createClient();
-      const { data: matchRows, error: matchError } = await supabase.rpc("lookup_student_for_referral", {
-        p_student_no: studentNo.trim(),
-      });
-      if (matchError) throw new Error("Couldn't check that student number — please try again.");
-      const match = ((matchRows ?? []) as { id: string; anonymous_alias: string | null }[])[0] ?? null;
+      let match: { id: string; anonymous_alias: string | null } | null = selected
+        ? { id: selected.id, anonymous_alias: selected.anonymous_alias }
+        : null;
+      if (!match) {
+        const { data: matchRows, error: matchError } = await supabase.rpc("lookup_student_for_referral", {
+          p_student_no: studentNo.trim(),
+        });
+        if (matchError) throw new Error("Couldn't check that student number — please try again.");
+        match = ((matchRows ?? []) as { id: string; anonymous_alias: string | null }[])[0] ?? null;
+      }
       if (!facultyId) {
         throw new Error("Your faculty record isn't linked yet — ask the guidance head to finish setup.");
       }
@@ -312,7 +416,7 @@ export function ReferralExcelModal({
             </h2>
             <p className="mt-1 text-sm leading-relaxed text-ink-muted">
               {step === "fill"
-                ? "Type the details below — press Refer to file it with the Guidance Office, or preview it for the official Excel/PDF template (FM-DOrSU-GCTC-02)."
+                ? "Search an enrolled student to link their account, or type the details by hand if they don't have one yet. Press Refer to file it with the Guidance Office, or preview it for the official Excel/PDF template (FM-DOrSU-GCTC-02)."
                 : "Check every detail below — download it as Excel or PDF, or press Refer to file it with the Guidance Office."}
             </p>
           </div>
@@ -328,15 +432,150 @@ export function ReferralExcelModal({
               <label className={labelCls} htmlFor="ref-excel-student">
                 Name of Student
               </label>
-              <Input
-                id="ref-excel-student"
-                value={studentName}
-                onChange={(e) => {
-                  setStudentName(e.target.value);
-                  setErrors((er) => ({ ...er, student: "" }));
-                }}
-                placeholder="Type the student's name"
-              />
+              <div className="relative">
+                <Search
+                  aria-hidden
+                  className={cn(
+                    "pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2",
+                    selected ? "text-emerald-600" : "text-ink-faint"
+                  )}
+                />
+                <Input
+                  id="ref-excel-student"
+                  role="combobox"
+                  aria-expanded={searchOpen}
+                  aria-controls="ref-excel-student-listbox"
+                  aria-autocomplete="list"
+                  aria-activedescendant={
+                    searchOpen && activeIndex >= 0 ? `ref-excel-student-option-${activeIndex}` : undefined
+                  }
+                  autoComplete="off"
+                  className={cn("pl-8", selected ? "border-emerald-300 pr-8" : "pr-8")}
+                  value={studentName}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setStudentName(value);
+                    // Editing the name breaks the picked name↔number pair. Drop
+                    // the auto-filled I.D. so the referral can't silently link
+                    // to the previously picked student on submit.
+                    if (selected) {
+                      if (studentNo.trim() === selected.student_no.trim()) setStudentNo("");
+                      setSelected(null);
+                    }
+                    setErrors((er) => ({ ...er, student: "" }));
+                  }}
+                  onFocus={() => {
+                    if (matches.length) setSearchOpen(true);
+                  }}
+                  onBlur={() => setSearchOpen(false)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      if (searchOpen) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setSearchOpen(false);
+                      }
+                      return;
+                    }
+                    if (!searchOpen || !matches.length) return;
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      setActiveIndex((i) => (i + 1) % matches.length);
+                    } else if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      setActiveIndex((i) => (i - 1 + matches.length) % matches.length);
+                    } else if (e.key === "Enter" && activeIndex >= 0) {
+                      e.preventDefault();
+                      pickStudent(matches[activeIndex]);
+                    }
+                  }}
+                  placeholder="Search a student — or type the name"
+                />
+                <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2">
+                  {searching ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-ink-faint" aria-hidden />
+                  ) : selected ? (
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-hidden />
+                  ) : null}
+                </span>
+                {searchOpen && matches.length > 0 && (
+                  <ul
+                    id="ref-excel-student-listbox"
+                    role="listbox"
+                    aria-label="Matching student accounts"
+                    className="absolute left-0 right-0 top-full z-20 mt-1 max-h-60 overflow-y-auto rounded-lg border border-ink/10 bg-white p-1 shadow-card"
+                  >
+                    {matches.map((m, i) => {
+                      const course = [m.program, m.year_level].filter(Boolean).join(" ");
+                      return (
+                        <li
+                          key={m.id}
+                          id={`ref-excel-student-option-${i}`}
+                          role="option"
+                          aria-selected={i === activeIndex}
+                        >
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onMouseEnter={() => setActiveIndex(i)}
+                            onClick={() => pickStudent(m)}
+                            className={cn(
+                              "flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left transition",
+                              i === activeIndex ? "bg-primary-50" : "hover:bg-cream/70"
+                            )}
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate text-[12.5px] font-bold text-ink">
+                                {m.display_name}
+                              </span>
+                              <span className="block truncate text-[11px] font-medium text-ink-muted">
+                                {[
+                                  course || "Program not set",
+                                  m.gender ? GENDER_LABEL[m.gender] ?? null : null,
+                                  m.age_years ? `${m.age_years} yrs` : null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </span>
+                            </span>
+                            <span className="shrink-0 rounded-full bg-cream px-2 py-0.5 text-[10.5px] font-bold tabular-nums text-ink-soft">
+                              {m.student_no}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+              {selected ? (
+                <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
+                  <CheckCircle2 className="h-3 w-3" aria-hidden />
+                  Linked account —{" "}
+                  {[
+                    "I.D. number",
+                    [selected.program, selected.year_level].filter(Boolean).length ? "course & year" : null,
+                    selected.gender ? "gender" : null,
+                    selected.age_years ? "age" : null,
+                  ]
+                    .filter(Boolean)
+                    .join(", ")}{" "}
+                  filled in.
+                </p>
+              ) : searchUnavailable ? (
+                <p className="mt-1 text-[11px] font-medium text-ink-faint">
+                  Student search isn&apos;t available yet — type the name manually.
+                </p>
+              ) : studentName.trim().length >= 2 ? (
+                <p className="mt-1 text-[11px] font-medium text-ink-faint">
+                  No account? Keep typing — it files as a walk-in.
+                </p>
+              ) : (
+                <p className="mt-1 text-[11px] font-medium text-ink-faint">
+                  Search an enrolled student, or type the name manually.
+                </p>
+              )}
               <FieldError message={errors.student} />
             </div>
             <div>
@@ -403,6 +642,7 @@ export function ReferralExcelModal({
                 value={studentNo}
                 onChange={(e) => {
                   setStudentNo(e.target.value);
+                  if (selected && e.target.value !== selected.student_no) setSelected(null);
                   setErrors((er) => ({ ...er, studentNo: "" }));
                 }}
                 placeholder="Type the student's I.D. number"
@@ -496,15 +736,26 @@ export function ReferralExcelModal({
             <label className={labelCls} htmlFor="ref-excel-referrer">
               Referrer&apos;s Name
             </label>
-            <Input
+            {/* Locked to the signed-in account (profiles.full_name). The paper
+                form must match the account that files it, so editing happens
+                in Settings — not per referral. */}
+            <div
               id="ref-excel-referrer"
-              value={referrer}
-              onChange={(e) => {
-                setReferrer(e.target.value);
-                setErrors((er) => ({ ...er, referrer: "" }));
-              }}
-              placeholder="Your name as it appears on the form"
-            />
+              className="flex h-8 items-center justify-between gap-2 rounded-lg border border-ink/10 bg-cream/60 px-3"
+            >
+              <span className="truncate text-sm font-semibold text-ink">{referrer.trim() || "—"}</span>
+              <span className="inline-flex shrink-0 items-center gap-1 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-faint">
+                <Lock className="h-3 w-3" aria-hidden />
+                Locked
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] font-medium text-ink-faint">
+              Taken from your account — change it in{" "}
+              <Link href="/settings" className="font-bold text-primary-700 hover:underline">
+                Settings
+              </Link>
+              .
+            </p>
             <FieldError message={errors.referrer} />
           </div>
 

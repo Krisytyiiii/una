@@ -48,7 +48,8 @@ Add every redirect the apps can return to:
 | Web (local, alternate host) | `http://127.0.0.1:3000/**` |
 | Web (production) | `https://<your-domain>/**` |
 | Mobile dev build / TestFlight / Play | `dorsu-mental://**` |
-| Expo Go | `exp://**` |
+| Expo Go (tunnel / dev-server hostname) | `exp://**` |
+| Expo Go (LAN IP, e.g. `exp://192.168.1.248:8081/**`) | **must be added per IP** — `exp://**` does not cover raw IP hosts |
 
 `supabase/config.toml` already lists the local values:
 
@@ -58,6 +59,38 @@ additional_redirect_urls = ["http://localhost:3000/**", "exp://**", "dorsu-menta
 ```
 
 Hosted projects do **not** read `config.toml` — set these in the dashboard.
+
+> **Current hosted project (`xueqvjozlyayggsyfzsq`):** Site URL is
+> `https://chekie.vercel.app`. `dorsu-mental://**`, `exp://**`, and
+> `https://chekie.vercel.app/**` are allowlisted (verified against
+> `/auth/v1/verify`), so dev builds and TestFlight/Play return to the app.
+
+### Expo Go over LAN falls back to the website (known limitation)
+
+Verified against the hosted project:
+
+| `redirect_to` | Result |
+|---|---|
+| `exp://abc.example.com:8081/--/auth/callback` | honored (`exp://**` matches hostnames) |
+| `exp://127.0.0.1:8081/--/auth/callback` | honored |
+| `exp://192.168.1.248:8081/--/auth/callback` | **falls back to Site URL** |
+| `exp://my-tunnel.exp.direct/--/auth/callback` | honored |
+
+`exp://**` matches *hostnames*, not raw IPv4 hosts, so scanning the Metro QR
+code over the office/school Wi-Fi (`exp://192.168.x.x:8081/--/…`) sends the
+browser to the web portal and `openAuthSessionAsync` reports a dismissal.
+Workarounds, best first:
+
+1. `npx expo start --tunnel` — the hostname becomes `<name>.exp.direct` (or
+   `u.expo.dev`), which `exp://**` already allows. No dashboard change.
+2. Add the exact origin to Redirect URLs, e.g. `exp://192.168.1.248:8081/**`.
+   This must be re-done whenever the LAN IP changes.
+3. Use a development build / TestFlight / Play build — those use
+   `dorsu-mental://auth/callback`, which is already allowed.
+
+`continueWithGoogle` logs the exact `redirectTo` while `__DEV__` and, if the
+browser is dismissed after >4s, returns an error naming the URL that has to be
+allowlisted. Check the Metro terminal before guessing.
 
 ### Diagnosing a misconfigured project (no Google login needed)
 
@@ -100,20 +133,40 @@ pending; after head approval they add their real name/employee details on
 
 ### Mobile
 
-`apps/mobile/lib/supabase/googleAuth.ts` (`continueWithGoogle`):
+`apps/mobile/lib/supabase/googleAuth.ts` (`continueWithGoogle(mode)`):
 
 1. `signInWithOAuth` with `skipBrowserRedirect: true` and
    `redirectTo = Linking.createURL('auth/callback')`.
 2. Opens the provider in an in-app browser (`expo-web-browser`).
 3. Reads `code` from the returned deep link and calls
    `exchangeCodeForSession` (PKCE verifier is in AsyncStorage).
-4. `finishOAuthAccount()` runs `ensureStudentRows`, then checks whether the
-   student number, program, and year level exist.
+4. Reads the caller's own `profiles.role`. Supabase creates an auth user for
+   any Google account, so the `profiles` row is what marks a real Chekie
+   account. The screen decides what happens next:
 
-Because Google never supplies school details, a **first-time Google user** is
+   | Situation | `mode: 'signin'` (login screen) | `mode: 'signup'` (register screen) |
+   |---|---|---|
+   | Staff role | Signed out → `/blocked` | Signed out → `/blocked` |
+   | No `profiles` row yet | Signed out → "No account found, create one first" dialog | `finishOAuthAccount()` creates the rows → school-details step |
+   | Student profile exists | Into the app (or school details if missing) | Signed out → "Account already exists, log in" dialog |
+
+   Neither mode writes a `students` row for a staff account, and sign-in never
+   silently creates an account.
+
+Because Google never supplies school details, a student who is missing them is
 routed to `/register?google=1` — the same screen in a "Finish your account"
 mode that asks only for student number, faculty, and year level. Existing
 students skip it.
+
+**Fallback route.** `WebBrowser.openAuthSessionAsync` normally intercepts
+`dorsu-mental://auth/callback` and hands the URL back to `continueWithGoogle`.
+On Android (and on a cold start) the OS can deliver the same link to
+expo-router instead, so `apps/mobile/app/auth/callback.tsx` exists as a real
+route: it exchanges the single-use code (or reuses the session the browser
+path already created), applies the same mode rules, and routes on. Without it
+the deep link shows expo-router's "Unmatched Route" screen. The mode is parked
+in AsyncStorage before the provider opens so the callback knows whether the
+user pressed *Continue with Google* or *Sign up with Google*.
 
 `apps/mobile/lib/supabase/client.ts` must keep `flowType: 'pkce'` and
 `detectSessionInUrl: false`; the app owns the redirect.
@@ -126,6 +179,11 @@ students skip it.
 2. Mobile: log out → Continue with Google → consent → app returns.
    - Existing student → Home.
    - New student → "Finish your account" → Home after saving.
+   - Google email that was never registered (login screen) → signed out,
+     "No account found" dialog → Create student account.
+   - Google email that is already registered (register screen) → signed out,
+     "Account already exists" dialog → Log in.
+   - Staff account → signed out → `/blocked` (web portal).
    - New faculty/counselor (web) → pending approval → `/complete-profile` after
      the guidance head approves.
 3. Cancel the consent screen → no error, no session, stay on login.

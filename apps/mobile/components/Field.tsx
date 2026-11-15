@@ -1,5 +1,5 @@
+import { useState, type ReactNode } from 'react';
 import { View, Text, TextInput, StyleSheet, type TextInputProps } from 'react-native';
-import type { ReactNode } from 'react';
 import { colors, fontFamily, fontSize, buttonRadius, sizes, spacing } from '@/theme';
 
 type Props = {
@@ -9,17 +9,26 @@ type Props = {
   error?: string;
 } & TextInputProps;
 
-export function Field({ label, icon, trailing, error, style, ...rest }: Props) {
+export function Field({ label, icon, trailing, error, style, onFocus, onBlur, ...rest }: Props) {
+  const [focused, setFocused] = useState(false);
   return (
     <View>
-      <Text style={styles.label}>{label}</Text>
-      <View style={styles.row}>
+      <Text style={[styles.label, focused && styles.labelFocused]}>{label}</Text>
+      <View style={[styles.row, focused && styles.rowFocused]}>
         {icon}
         <TextInput
           placeholderTextColor={colors.muted}
           style={[styles.input, style]}
           underlineColorAndroid="transparent"
           {...rest}
+          onFocus={(e) => {
+            setFocused(true);
+            onFocus?.(e);
+          }}
+          onBlur={(e) => {
+            setFocused(false);
+            onBlur?.(e);
+          }}
         />
         {trailing}
       </View>
@@ -30,6 +39,7 @@ export function Field({ label, icon, trailing, error, style, ...rest }: Props) {
 
 const styles = StyleSheet.create({
   label: { fontFamily: fontFamily.bold, fontSize: fontSize.xs, color: colors.ink, marginBottom: spacing.xs },
+  labelFocused: { color: colors.blue },
   row: {
     height: sizes.inputHeight,
     borderRadius: buttonRadius,
@@ -41,6 +51,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingHorizontal: spacing.sm,
   },
+  rowFocused: { borderColor: colors.blue },
   input: {
     flex: 1,
     fontFamily: fontFamily.regular,

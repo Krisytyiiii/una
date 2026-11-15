@@ -46,6 +46,30 @@ function isWithinAvailability(slots: BoardSlot[], iso: string): boolean {
   return slotWindowsForDate(slots, toISODate(d)).some((w) => mins >= w.start && mins < w.end);
 }
 
+/** The default session length when a request carries no explicit end (matches the service layer). */
+const DEFAULT_SESSION_MS = 60 * 60 * 1000;
+
+/**
+ * Does the whole requested session (start → end) sit inside ONE of this
+ * counselor's published windows? Mirrors the server gate in
+ * assignAppointment, so the head's dropdown never offers a counselor the
+ * write would reject. Empty slot lists fail closed: no published window means
+ * there is nothing to assign into.
+ */
+function sessionFitsAvailability(slots: BoardSlot[] | undefined, appt: Appt): boolean {
+  if (!slots || !slots.length) return false;
+  const start = new Date(appt.scheduled_at);
+  if (Number.isNaN(start.getTime())) return false;
+  const end = appt.ends_at ? new Date(appt.ends_at) : new Date(start.getTime() + DEFAULT_SESSION_MS);
+  if (Number.isNaN(end.getTime()) || end.getTime() <= start.getTime()) return false;
+  if (toISODate(start) !== toISODate(end)) return false;
+  const startMins = start.getHours() * 60 + start.getMinutes();
+  const endMins = end.getHours() * 60 + end.getMinutes();
+  return slotWindowsForDate(slots, toISODate(start)).some(
+    (w) => startMins >= w.start && endMins <= w.end
+  );
+}
+
 /** Tone classes for the availability meta badges (mirrors /availability). */
 const META_TONES: Record<string, string> = {
   emerald: "bg-emerald-50 text-emerald-700 ring-emerald-200",
@@ -374,6 +398,7 @@ export function AppointmentsBoard({
   setCounselorFilter,
   counselors,
   slots,
+  slotsByCounselor,
   aliases,
   role,
   busyId,
@@ -409,6 +434,12 @@ export function AppointmentsBoard({
   counselors: CounselorOpt[];
   /** Counselor's own availability windows (empty for the head). */
   slots: BoardSlot[];
+  /**
+   * Every counselor's published windows by counselor id (guidance head only).
+   * Drives the assignment dropdown — a counselor whose windows miss the
+   * requested time is offered disabled.
+   */
+  slotsByCounselor: Map<string, BoardSlot[]>;
   aliases: Map<string, string>;
   role: string | null;
   busyId: string | null;
@@ -696,11 +727,18 @@ export function AppointmentsBoard({
                               disabled={busyId === a.id}
                               options={[
                                 { value: "", label: "Unassigned" },
-                                ...counselors.map((c) => ({
-                                  value: c.id,
-                                  label: c.available ? c.name : `${c.name} · paused`,
-                                  disabled: !c.available,
-                                })),
+                                ...counselors.map((c) => {
+                                  const freeNow = sessionFitsAvailability(slotsByCounselor.get(c.id), a);
+                                  return {
+                                    value: c.id,
+                                    label: !c.available
+                                      ? `${c.name} · paused`
+                                      : !freeNow
+                                        ? `${c.name} · outside hours`
+                                        : c.name,
+                                    disabled: !c.available || !freeNow,
+                                  };
+                                }),
                               ]}
                             />
                             {busyId === a.id && (

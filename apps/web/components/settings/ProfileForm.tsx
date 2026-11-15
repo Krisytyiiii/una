@@ -87,8 +87,11 @@ export function ProfileForm({
 
       <div className="px-5 pb-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="-mt-11 flex items-end gap-3 sm:-mt-12">
-            <div className="relative shrink-0">
+          {/* The avatar alone is pulled up to straddle the gradient; the name
+              block stays at the banner's bottom edge so it is never clipped.
+              `relative` keeps the text painting above the positioned banner. */}
+          <div className="flex items-start gap-3">
+            <div className="relative -mt-11 shrink-0 sm:-mt-12">
               {avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element -- signed, expiring URL
                 <img
@@ -123,7 +126,7 @@ export function ProfileForm({
                 />
               </label>
             </div>
-            <div className="pb-1 leading-tight">
+            <div className="relative pb-1 leading-tight">
               <p className="font-display text-xl font-bold text-ink sm:text-2xl">{loading ? "…" : fullName || "Unnamed"}</p>
               <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] font-medium text-ink-muted">
                 <Badge tone={isHead ? "warning" : "info"}>{loading ? "…" : roleLabel}</Badge>

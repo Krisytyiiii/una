@@ -20,6 +20,7 @@
     "@dorsu/supabase-client": "workspace:*",
     "@dorsu/ui-tokens": "workspace:*",
     "@expo-google-fonts/dm-sans": "^0.4.2",
+    "@expo-google-fonts/roboto": "^0.4.2",
     "@expo/dom-webview": "~58.0.2",
     "@expo/metro-runtime": "~58.0.15",
     "@hookform/resolvers": "^5.9.1",

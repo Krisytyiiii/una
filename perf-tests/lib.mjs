@@ -33,7 +33,7 @@ export function loadEnv() {
   try {
     host = new URL(url).host;
   } catch {}
-  return { url, host, serviceKey, anonKey, directUrl };
+  return { url, host, serviceKey, anonKey, directUrl, env };
 }
 
 /** Refuse to run writes against anything that is not the approved staging host. */

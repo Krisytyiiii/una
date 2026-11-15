@@ -1,4 +1,5 @@
 import type { TypedSupabaseClient } from '@dorsu/supabase-client';
+import { STUDENT_ROLE, roleLabel } from './accountAccess';
 
 function isConflict(message: string): boolean {
   return /duplicate|unique|23505|already exists|already registered/i.test(message);
@@ -19,23 +20,61 @@ export function friendlyDbError(message: string): string {
 }
 
 /**
+ * Outcome of the idempotent student-row bootstrap.
+ *
+ * `notStudent` is kept separate from a plain error so callers can sign the
+ * account out and send it to `/blocked` instead of showing a generic failure.
+ */
+export type EnsureStudentOutcome =
+  | { ok: true }
+  | { ok: false; error: string; notStudent?: false }
+  | { ok: false; error: string; notStudent: true; role: string };
+
+export function notStudentMessage(role: string | null | undefined): string {
+  return `This is a ${roleLabel(role)} account. Please use the Chekie website instead.`;
+}
+
+/**
  * Ensure `profiles` + `students` rows exist for an authenticated student.
  * RLS (00030 `profiles_insert_own_student`, `students_insert_own`) lets a
  * signed-in user insert exactly their own rows with role forced to
  * 'student'. Safe to call on every login: existing rows are left alone.
+ *
+ * The role is checked first: `students_insert_own` only requires
+ * `profile_id = auth.uid()`, so without this a staff session could mint a
+ * student row for itself. Staff accounts are returned as `notStudent` and no
+ * write is attempted.
  */
 export async function ensureStudentRows(
   supabase: TypedSupabaseClient,
   userId: string,
-  fields: { email: string; fullName: string; studentNo?: string; program?: string; yearLevel?: string },
-): Promise<{ ok: true } | { ok: false; error: string }> {
+  fields: {
+    email: string;
+    fullName: string;
+    studentNo?: string;
+    program?: string;
+    yearLevel?: string;
+    /** Optional signup demographics (00079) — copied onto the student row. */
+    gender?: 'male' | 'female' | 'prefer_not_to_say';
+    birthdate?: string;
+  },
+): Promise<EnsureStudentOutcome> {
   const { data: profile, error: profileReadError } = await supabase
     .from('profiles')
-    .select('id')
+    .select('id, role')
     .eq('id', userId)
     .maybeSingle();
   if (profileReadError) return { ok: false, error: profileReadError.message };
-  if (!profile) {
+  const profileRow = profile as { id: string; role?: string | null } | null;
+  if (profileRow?.role && profileRow.role !== STUDENT_ROLE) {
+    return {
+      ok: false,
+      notStudent: true,
+      role: profileRow.role,
+      error: notStudentMessage(profileRow.role),
+    };
+  }
+  if (!profileRow) {
     const { error: profileError } = await supabase.from('profiles').insert({
       id: userId,
       email: fields.email,
@@ -63,6 +102,8 @@ export async function ensureStudentRows(
         student_no: fields.studentNo,
         program: fields.program ?? null,
         year_level: fields.yearLevel ?? null,
+        gender: fields.gender ?? null,
+        birthdate: fields.birthdate ?? null,
         anonymous_alias: makeAlias(),
       });
       if (!studentError) return { ok: true };

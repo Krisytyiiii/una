@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -10,46 +9,43 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
+import CalendarDays from 'lucide-react-native/icons/calendar-days';
+import CircleCheckBig from 'lucide-react-native/icons/circle-check-big';
+import ClipboardList from 'lucide-react-native/icons/clipboard-list';
+import Plus from 'lucide-react-native/icons/plus';
 import { listStudentAppointments, preSessionPss10State, isWithinStudentRescheduleWindow, submitFeedback } from '@dorsu/shared-services';
 import type { AppointmentRow } from '@dorsu/shared-types';
 import { getSupabase } from '@/lib/supabase/client';
 import { errorMessage } from '@/lib/errors';
 import { loadCounselorDirectory } from '@/lib/counselors';
-import { colors, fontFamily, fontSize, spacing } from '@/theme';
+import { colors, fontFamily, fontSize, radius, spacing, cardShadow } from '@/theme';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
-import { CounselorPill } from '@/components/CounselorPill';
+import { type CheckinSummary, isPssBand } from '@/components/CheckinResult';
+import { LumiFigure } from '@/components/mascot/Lumi';
+import { PressableScale } from '@/components/PressableScale';
 import { RescheduleModal } from '@/components/RescheduleModal';
 import { SessionDetailsModal } from '@/components/SessionDetailsModal';
-import { StatusChip } from '@/components/StatusChip';
-import { StarRating } from '@/components/StarRating';
+import { SessionCard } from '@/components/sessions/SessionCard';
+import { SessionSkeleton } from '@/components/sessions/SessionSkeleton';
+import { SessionTabs, type SessionTab } from '@/components/sessions/SessionTabs';
+import { countdownLabel, dayParts } from '@/lib/session-format';
+import { TAB_BAR_BASE } from '@/components/TabBar';
 
-type Tab = 'Upcoming' | 'Past' | 'Canceled';
-const tabs: Tab[] = ['Upcoming', 'Past', 'Canceled'];
+type Tab = SessionTab;
 
 const ACTIVE = ['pending', 'assigned', 'confirmed'];
 
-function timeOf(iso: string): { month: string; day: string; when: string } {
-  const d = new Date(iso);
-  const month = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
-  const day = String(d.getDate());
-  const weekday = d.toLocaleDateString('en-US', { weekday: 'short' });
-  let h = d.getHours();
-  const m = d.getMinutes().toString().padStart(2, '0');
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  h = h % 12;
-  if (h === 0) h = 12;
-  return { month, day, when: `${weekday} · ${h}:${m} ${ampm}` };
-}
+/** `listStudentAppointments` embeds the booking-gate assessment on each row. */
+type LinkedPss = {
+  total_score: number;
+  band: string;
+  created_at: string;
+};
 
-function titleFor(row: AppointmentRow): string {
-  const base = row.concern.replace(/\s+support session requested$/i, '').trim();
-  return base === '' ? 'Counseling session' : `${base} session`;
-}
-
-function modeLabel(row: AppointmentRow): string {
-  return row.mode === 'online' ? 'Online' : 'In person · Guidance Office';
-}
+type StudentAppointment = AppointmentRow & {
+  pss10?: LinkedPss | LinkedPss[] | null;
+};
 
 export default function Sessions() {
   const [tab, setTab] = useState<Tab>('Upcoming');
@@ -57,6 +53,10 @@ export default function Sessions() {
   const [studentId, setStudentId] = useState<string | null>(null);
   const [checkins, setCheckins] = useState(0);
   const [checkinByAppt, setCheckinByAppt] = useState<Record<string, string>>({});
+  // Newest scored check-in per appointment, from either link:
+  //   appointments.pss10_id  (assessment taken at booking)
+  //   pss10_assessments.appointment_id (pre-session check-in, retakes allowed)
+  const [resultByAppt, setResultByAppt] = useState<Record<string, CheckinSummary>>({});
   const [rated, setRated] = useState<Record<string, number>>({});
   const [draft, setDraft] = useState<Record<string, number>>({});
   const [error, setError] = useState('');
@@ -100,7 +100,7 @@ export default function Sessions() {
         supabase.from('feedback').select('appointment_id, rating').eq('student_id', sid),
         supabase
           .from('pss10_assessments')
-          .select('id, appointment_id, created_at', { count: 'exact' })
+          .select('id, appointment_id, created_at, total_score, band', { count: 'exact' })
           .eq('student_id', sid)
           .order('created_at', { ascending: false }),
         // Best-effort: sessions must still render if the directory lookup fails.
@@ -112,20 +112,58 @@ export default function Sessions() {
       }
       // Newest linked check-in per appointment (retakes allowed since 00068).
       // The query is ordered newest-first, so the first row wins.
-      const checkinMap: Record<string, string> = {};
-      for (const p of (pssRes.data ?? []) as {
+      const pssRows = (pssRes.data ?? []) as {
         appointment_id: string | null;
         created_at: string;
-      }[]) {
-        if (p.appointment_id && !checkinMap[p.appointment_id]) {
-          checkinMap[p.appointment_id] = p.created_at;
+        total_score: number | null;
+        band: string | null;
+      }[];
+      const checkinMap: Record<string, string> = {};
+      const resultMap: Record<string, CheckinSummary> = {};
+      for (const p of pssRows) {
+        if (!p.appointment_id) continue;
+        if (!checkinMap[p.appointment_id]) checkinMap[p.appointment_id] = p.created_at;
+        if (
+          !resultMap[p.appointment_id] &&
+          isPssBand(p.band) &&
+          typeof p.total_score === 'number'
+        ) {
+          resultMap[p.appointment_id] = {
+            at: p.created_at,
+            totalScore: p.total_score,
+            band: p.band,
+          };
         }
       }
+
+      const appointmentRows = (appts ?? []) as StudentAppointment[];
+      // The assessment taken at booking hangs off appointments.pss10_id rather
+      // than appointment_id, so merge it in and keep whichever is newer.
+      for (const a of appointmentRows) {
+        const linked = Array.isArray(a.pss10) ? a.pss10[0] : a.pss10;
+        if (!linked || !isPssBand(linked.band) || typeof linked.total_score !== 'number') {
+          continue;
+        }
+        const existing = resultMap[a.id];
+        if (
+          existing &&
+          new Date(existing.at).getTime() >= new Date(linked.created_at).getTime()
+        ) {
+          continue;
+        }
+        resultMap[a.id] = {
+          at: linked.created_at,
+          totalScore: linked.total_score,
+          band: linked.band,
+        };
+      }
+
       setStudentId(sid);
-      setRows(((appts ?? []) as AppointmentRow[]));
+      setRows(appointmentRows);
       setRated(feedbackMap);
       setCheckins(pssRes.count ?? 0);
       setCheckinByAppt(checkinMap);
+      setResultByAppt(resultMap);
       setCounselorNames(directory.names);
       setCounselorSpecialties(directory.specialties);
       setError('');
@@ -178,6 +216,14 @@ export default function Sessions() {
     ? counselorSpecialties[selected.counselor_id]
     : undefined;
 
+  // Hero subtitle: the soonest session (or an invitation to book).
+  const nextUp = upcoming[0];
+  const heroSub = loading
+    ? 'Loading your sessions…'
+    : nextUp
+      ? `Next session ${countdownLabel(nextUp.scheduled_at).toLowerCase()} · ${dayParts(nextUp.scheduled_at).time}`
+      : 'Nothing scheduled — book whenever you are ready.';
+
   // Shared details/cancel/reschedule sheets: closing the details first keeps a
   // single modal on screen at a time.
   const requestCancel = (row: AppointmentRow) => {
@@ -225,6 +271,22 @@ export default function Sessions() {
     void load().finally(() => setRefreshing(false));
   };
 
+  const emptyCopy =
+    tab === 'Canceled'
+      ? {
+          title: 'No canceled sessions',
+          body: 'Canceled requests will show up here.',
+        }
+      : tab === 'Past'
+        ? {
+            title: 'No past sessions yet',
+            body: 'Completed sessions and your ratings appear here.',
+          }
+        : {
+            title: 'No upcoming sessions',
+            body: 'Book when you are ready. We are here.',
+          };
+
   return (
     <View style={styles.root}>
       <SafeAreaView edges={['top', 'bottom']} style={styles.safe}>
@@ -232,241 +294,188 @@ export default function Sessions() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.content}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.blue} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.blue}
+              colors={[colors.blue]}
+            />
           }
         >
-          <View style={styles.head}>
-            <Text style={styles.title}>My sessions</Text>
-            <Button label="+ Book new" variant="accent" onPress={() => router.push('/book')} />
-          </View>
+          <View style={styles.hero}>
+            <View pointerEvents="none" style={styles.heroSun} />
+            <View pointerEvents="none" style={styles.heroSky} />
 
-          <View style={styles.stats}>
-            <Card style={[styles.stat, styles.statBlue]}>
-              <Text style={[styles.statN, styles.statNLight]}>{loading ? '—' : upcoming.length}</Text>
-              <Text style={[styles.statL, styles.statLLight]}>Upcoming</Text>
-            </Card>
-            <Card style={styles.stat}>
-              <Text style={styles.statN}>{loading ? '—' : completedCount}</Text>
-              <Text style={styles.statL}>Completed</Text>
-            </Card>
-            <Card style={styles.stat}>
-              <Text style={styles.statN}>{loading ? '—' : checkins}</Text>
-              <Text style={styles.statL}>Check-ins</Text>
-            </Card>
-          </View>
-
-          <View style={styles.tabs}>
-            {tabs.map((t) => (
-              <Pressable
-                key={t}
-                onPress={() => setTab(t)}
-                accessibilityRole="tab"
-                accessibilityState={{ selected: tab === t }}
-                accessibilityLabel={`${t}, ${tabCounts[t]} sessions`}
-                style={styles.tabWrap}
-              >
-                <View style={styles.tabInner}>
-                  <Text style={[styles.tabText, tab === t && styles.tabTextOn]}>{t}</Text>
-                  <View style={[styles.tabCount, tab === t && styles.tabCountOn]}>
-                    <Text style={[styles.tabCountText, tab === t && styles.tabCountTextOn]}>
-                      {loading ? '—' : tabCounts[t]}
-                    </Text>
-                  </View>
-                </View>
-              </Pressable>
-            ))}
-          </View>
-
-          {error !== '' ? (
-            <Card style={styles.errCard}>
-              <Text style={styles.errText}>{error}</Text>
-              <View style={styles.mt}>
-                <Button label="Try again" variant="outline" onPress={() => void load()} />
+            <View style={styles.heroTop}>
+              <View style={styles.flex}>
+                <Text style={styles.heroEyebrow}>YOUR CARE</Text>
+                <Text style={styles.heroTitle}>My sessions</Text>
               </View>
-            </Card>
-          ) : null}
 
-          {loading ? (
-            <View style={styles.center}>
-              <ActivityIndicator color={colors.blue} />
-              <Text style={styles.emptySub}>Loading your sessions…</Text>
+              <PressableScale
+                onPress={() => router.push('/book')}
+                scaleTo={0.95}
+                accessibilityRole="button"
+                accessibilityLabel="Book a new session"
+                style={styles.bookBtn}
+              >
+                <Plus size={14} color={colors.ink} strokeWidth={2.6} />
+                <Text style={styles.bookText}>Book new</Text>
+              </PressableScale>
             </View>
-          ) : list.length === 0 ? (
-            <Card>
-              <Text style={styles.emptyTitle}>
-                {tab === 'Canceled'
-                  ? 'No canceled sessions'
-                  : tab === 'Past'
-                    ? 'No past sessions yet'
-                    : 'No upcoming sessions'}
-              </Text>
-              <Text style={styles.emptySub}>
-                {tab === 'Canceled'
-                  ? 'Canceled requests will show up here.'
-                  : tab === 'Past'
-                    ? 'Completed sessions and ratings appear here.'
-                    : 'Book when you are ready. We are here.'}
-              </Text>
-              {tab !== 'Canceled' ? (
-                <View style={styles.mt}>
-                  <Button label="Book a session" onPress={() => router.push('/book')} />
+
+            <Text style={styles.heroSub}>{heroSub}</Text>
+          </View>
+
+          <View style={styles.body}>
+            <View style={styles.summary}>
+              <Pressable
+                onPress={() => setTab('Upcoming')}
+                accessibilityRole="button"
+                accessibilityLabel={`Upcoming sessions, ${upcoming.length}`}
+                accessibilityState={{ selected: tab === 'Upcoming' }}
+                style={({ pressed }) => [styles.summaryItem, pressed && styles.summaryPressed]}
+              >
+                <View style={[styles.summaryIcon, styles.summaryIconSky]}>
+                  <CalendarDays size={15} color={colors.blue} />
                 </View>
-              ) : null}
-            </Card>
-          ) : (
-            list.map((a) => {
-              const { month, day, when } = timeOf(a.scheduled_at);
-              const isActive = ACTIVE.includes(a.status) && new Date(a.scheduled_at).getTime() >= nowMs;
-              const checkinState = preSessionPss10State({
-                required: a.pss10_required,
-                waivedAt: a.pss10_waived_at,
-                scheduledAt: a.scheduled_at,
-                submittedAt: checkinByAppt[a.id] ?? null,
-              });
-              const needsCheckin =
-                isActive &&
-                a.status === 'confirmed' &&
-                (checkinState === 'missing' || checkinState === 'expired');
-              const checkinDone = a.status === 'confirmed' && checkinState === 'complete';
-              const canReschedule =
-                a.status === 'pending' ||
-                a.status === 'assigned' ||
-                (a.status === 'confirmed' &&
-                  isActive &&
-                  isWithinStudentRescheduleWindow(a.scheduled_at));
-              const counselorName = a.counselor_id ? counselorNames[a.counselor_id] : undefined;
-              const sent = rated[a.id];
-              return (
-                <View key={a.id} style={styles.row}>
-                  <View style={styles.rail}>
-                    <Text style={styles.month}>{month}</Text>
-                    <Text style={styles.dayNum}>{day}</Text>
-                    <View
-                      style={[
-                        styles.dot,
-                        {
-                          backgroundColor:
-                            a.status === 'confirmed'
-                              ? colors.blue
-                              : a.status === 'pending' || a.status === 'assigned'
-                                ? colors.sun
-                                : colors.muted,
-                        },
-                      ]}
-                    />
-                    <View style={styles.line} />
+                <Text style={styles.summaryNum}>{loading ? '—' : upcoming.length}</Text>
+                <Text style={styles.summaryLabel}>Upcoming</Text>
+              </Pressable>
+
+              <View style={styles.summaryDivider} />
+
+              <Pressable
+                onPress={() => setTab('Past')}
+                accessibilityRole="button"
+                accessibilityLabel={`Past sessions, ${completedCount} completed`}
+                accessibilityState={{ selected: tab === 'Past' }}
+                style={({ pressed }) => [styles.summaryItem, pressed && styles.summaryPressed]}
+              >
+                <View style={[styles.summaryIcon, styles.summaryIconSun]}>
+                  <CircleCheckBig size={15} color={colors.ink} />
+                </View>
+                <Text style={styles.summaryNum}>{loading ? '—' : completedCount}</Text>
+                <Text style={styles.summaryLabel}>Completed</Text>
+              </Pressable>
+
+              <View style={styles.summaryDivider} />
+
+              <Pressable
+                onPress={() => router.push('/check-in')}
+                accessibilityRole="button"
+                accessibilityLabel={`${checkins} stress check-ins, start a new one`}
+                style={({ pressed }) => [styles.summaryItem, pressed && styles.summaryPressed]}
+              >
+                <View style={[styles.summaryIcon, styles.summaryIconChip]}>
+                  <ClipboardList size={15} color={colors.blue} />
+                </View>
+                <Text style={styles.summaryNum}>{loading ? '—' : checkins}</Text>
+                <Text style={styles.summaryLabel}>Check-ins</Text>
+              </Pressable>
+            </View>
+
+            <SessionTabs
+              active={tab}
+              counts={tabCounts}
+              loading={loading}
+              onChange={setTab}
+            />
+
+            {error !== '' ? (
+              <Card style={styles.errCard}>
+                <Text style={styles.errText}>{error}</Text>
+                <Button label="Try again" variant="outline" onPress={() => void load()} />
+              </Card>
+            ) : null}
+
+            {loading ? (
+              <SessionSkeleton />
+            ) : list.length === 0 ? (
+              <Card style={styles.emptyCard}>
+                <View style={styles.emptyIcon}>
+                  <LumiFigure look={4} feel="calm" size={64} />
+                </View>
+                <Text style={styles.emptyTitle}>{emptyCopy.title}</Text>
+                <Text style={styles.emptySub}>{emptyCopy.body}</Text>
+                {tab !== 'Canceled' ? (
+                  <View style={styles.emptyAction}>
+                    <Button label="Book a session" onPress={() => router.push('/book')} />
                   </View>
-                  <Pressable
-                    onPress={() => setOpenId(a.id)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Session details for ${titleFor(a)}`}
-                    style={styles.cardPress}
-                  >
-                    <Card style={styles.card}>
-                      <Text style={styles.cardTitle}>{titleFor(a)}</Text>
-                      <Text style={styles.meta}>
-                        {when} · {modeLabel(a)}
-                      </Text>
-                      <View style={[styles.mt, styles.pills]}>
-                        <StatusChip status={a.status} />
-                        <CounselorPill assigned={a.counselor_id !== null} name={counselorName} />
-                      </View>
-
-                      {checkinDone ? (
-                        <Text style={styles.checkinOk}>
-                          Pre-session check-in complete
-                          {checkinByAppt[a.id]
-                            ? ` · ${new Date(checkinByAppt[a.id]).toLocaleDateString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                              })}`
-                            : ''}
-                        </Text>
-                      ) : null}
-
-                      {needsCheckin ? (
-                        <View style={styles.mt}>
-                          <Text style={styles.checkinNeeded}>
-                            {checkinState === 'expired'
-                              ? 'Your last check-in is older than 7 days. Complete a fresh one before this session.'
-                              : 'Complete a short check-in so your counselor can prepare for this session.'}
-                          </Text>
-                          <Button
-                            label="Pre-session check-in"
-                            onPress={() =>
-                              router.push({
-                                pathname: '/check-in',
-                                params: { appointmentId: a.id },
-                              })
-                            }
-                          />
-                        </View>
-                      ) : null}
-
-                      {isActive ? (
-                        <View style={styles.btns}>
-                          {canReschedule ? (
-                            <Button
-                              label="Reschedule"
-                              variant="outline"
-                              onPress={() => requestReschedule(a)}
-                              style={styles.flex}
-                            />
-                          ) : null}
-                          <Button
-                            label="Cancel"
-                            variant="dangerOutline"
-                            onPress={() => requestCancel(a)}
-                            style={styles.flex}
-                          />
-                        </View>
-                      ) : null}
-
-                      {isActive && a.status === 'confirmed' && !canReschedule ? (
-                        <Text style={styles.lockNote}>
-                          This session starts within 24 hours — contact the Guidance Office if
-                          you need to move it.
-                        </Text>
-                      ) : null}
-
-                      {isActive && a.status === 'confirmed' ? (
-                        <View style={styles.mt}>
-                          <Button label="Message" onPress={() => router.push('/chat')} />
-                        </View>
-                      ) : null}
-
-                      {isActive && a.mode === 'online' && a.meeting_url ? (
-                        <Text style={styles.meet}>Video link is ready in your confirmation.</Text>
-                      ) : null}
-
-                      {a.status === 'completed' ? (
-                        <View style={styles.rate}>
-                          {sent !== undefined ? (
-                            <Text style={styles.rateLabel}>You rated this session {sent}★</Text>
-                          ) : (
-                            <>
-                              <Text style={styles.rateLabel}>Rate this session</Text>
-                              <StarRating
-                                value={draft[a.id] ?? 0}
-                                onChange={(v) => setDraft((d) => ({ ...d, [a.id]: v }))}
-                              />
-                              <View style={styles.mt}>
-                                <Button
-                                  label={fbBusyId === a.id ? 'Sending…' : 'Send'}
-                                  disabled={!draft[a.id] || fbBusyId !== null}
-                                  onPress={() => void sendFeedback(a)}
-                                />
-                              </View>
-                            </>
-                          )}
-                        </View>
-                      ) : null}
-                    </Card>
-                  </Pressable>
+                ) : null}
+              </Card>
+            ) : (
+              <>
+                <View style={styles.listHead}>
+                  <Text style={styles.listCaption}>
+                    {tab === 'Upcoming'
+                      ? 'Tap a session to view details and actions'
+                      : 'Tap a session to view details'}
+                  </Text>
+                  <View style={styles.listCount}>
+                    <Text style={styles.listCountText}>{list.length}</Text>
+                  </View>
                 </View>
-              );
-            })
-          )}
+
+                {list.map((a, index) => {
+                  const isActive =
+                    ACTIVE.includes(a.status) &&
+                    new Date(a.scheduled_at).getTime() >= nowMs;
+                  const checkinState = preSessionPss10State({
+                    required: a.pss10_required,
+                    waivedAt: a.pss10_waived_at,
+                    scheduledAt: a.scheduled_at,
+                    submittedAt: checkinByAppt[a.id] ?? null,
+                  });
+                  const canReschedule =
+                    a.status === 'pending' ||
+                    a.status === 'assigned' ||
+                    (a.status === 'confirmed' &&
+                      isActive &&
+                      isWithinStudentRescheduleWindow(a.scheduled_at));
+
+                  return (
+                    <View key={a.id} style={styles.cardWrap}>
+                      <SessionCard
+                        appointment={a}
+                        counselorName={
+                          a.counselor_id ? counselorNames[a.counselor_id] : undefined
+                        }
+                        counselorSpecialty={
+                          a.counselor_id
+                            ? counselorSpecialties[a.counselor_id]
+                            : undefined
+                        }
+                        checkinState={checkinState}
+                        checkinAt={checkinByAppt[a.id]}
+                        checkinResult={resultByAppt[a.id]}
+                        rating={rated[a.id]}
+                        draftRating={draft[a.id]}
+                        ratingBusy={fbBusyId === a.id}
+                        active={isActive}
+                        canReschedule={canReschedule}
+                        featured={tab === 'Upcoming' && index === 0}
+                        onOpen={() => setOpenId(a.id)}
+                        onReschedule={() => requestReschedule(a)}
+                        onCancel={() => requestCancel(a)}
+                        onCheckin={() =>
+                          router.push({
+                            pathname: '/check-in',
+                            params: { appointmentId: a.id },
+                          })
+                        }
+                        onMessage={() => router.push('/chat')}
+                        onDraftRating={(value) =>
+                          setDraft((d) => ({ ...d, [a.id]: value }))
+                        }
+                        onSubmitRating={() => void sendFeedback(a)}
+                      />
+                    </View>
+                  );
+                })}
+              </>
+            )}
+          </View>
         </ScrollView>
       </SafeAreaView>
 
@@ -477,11 +486,16 @@ export default function Sessions() {
           selected?.counselor_id ? counselorNames[selected.counselor_id] : undefined
         }
         counselorSpecialty={selectedSpecialty}
+        checkinResult={selected ? resultByAppt[selected.id] : null}
         onClose={() => setOpenId(null)}
         onRequestReschedule={requestReschedule}
         onRequestCancel={requestCancel}
         onCancelClose={() => setCancelTarget(null)}
         onCancelled={applyCancelled}
+        onMessage={() => {
+          setOpenId(null);
+          router.push('/chat');
+        }}
       />
 
       <RescheduleModal
@@ -494,78 +508,198 @@ export default function Sessions() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.cream },
-  safe: { flex: 1, backgroundColor: colors.cream },
-  content: { paddingHorizontal: spacing.lg, paddingBottom: 96, gap: spacing.md },
-  head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  title: { fontFamily: fontFamily.bold, fontSize: fontSize.xl, color: colors.ink },
-  stats: { flexDirection: 'row', gap: spacing.sm },
-  stat: { flex: 1, alignItems: 'center' },
-  statBlue: { backgroundColor: colors.blue, borderBottomColor: colors.blueDark },
-  statN: { fontFamily: fontFamily.bold, fontSize: fontSize.xl, color: colors.ink },
-  statL: { fontFamily: fontFamily.regular, fontSize: fontSize.xs, color: colors.muted },
-  statNLight: { color: colors.white },
-  statLLight: { color: colors.white },
-  tabs: { flexDirection: 'row', gap: spacing.md },
-  tabWrap: { borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabInner: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  tabCount: {
-    minWidth: 18,
-    borderRadius: 9,
+  root: { flex: 1, backgroundColor: colors.white },
+  safe: { flex: 1, backgroundColor: colors.white },
+  content: { paddingBottom: TAB_BAR_BASE + spacing.xl },
+  flex: { flex: 1 },
+
+  /* -------------------------------- hero -------------------------------- */
+
+  hero: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.lg,
+    overflow: 'hidden',
+    gap: spacing.xs,
+  },
+  heroSun: {
+    position: 'absolute',
+    top: -100,
+    right: -60,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: colors.sunSoft,
+    opacity: 0.75,
+  },
+  heroSky: {
+    position: 'absolute',
+    bottom: -100,
+    left: -80,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: colors.sky,
+    opacity: 0.65,
+  },
+  heroTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  heroEyebrow: {
+    fontFamily: fontFamily.bold,
+    fontSize: fontSize.xxs,
+    letterSpacing: 1.1,
+    color: colors.muted,
+  },
+  heroTitle: {
+    fontFamily: fontFamily.bold,
+    fontSize: fontSize.xl,
+    lineHeight: fontSize.xl + 4,
+    letterSpacing: -0.2,
+    color: colors.ink,
+  },
+  heroSub: {
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.sm,
+    color: colors.muted,
+  },
+  bookBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 18,
+    backgroundColor: colors.sun,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.creamLine,
+    shadowColor: colors.ink,
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+  },
+  bookText: {
+    fontFamily: fontFamily.bold,
+    fontSize: fontSize.sm,
+    color: colors.ink,
+  },
+
+  /* -------------------------------- body -------------------------------- */
+
+  body: {
+    paddingHorizontal: spacing.lg,
+    gap: spacing.md,
+  },
+  summary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    paddingVertical: spacing.md,
+    ...cardShadow,
+  },
+  summaryItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: spacing.xs,
+  },
+  summaryPressed: { opacity: 0.55 },
+  summaryDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: 38,
+    backgroundColor: colors.border,
+  },
+  summaryIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  summaryIconSky: { backgroundColor: colors.sky },
+  summaryIconSun: { backgroundColor: colors.sunSoft },
+  summaryIconChip: { backgroundColor: colors.chip },
+  summaryNum: {
+    fontFamily: fontFamily.bold,
+    fontSize: fontSize.xl,
+    lineHeight: fontSize.xl + 4,
+    color: colors.ink,
+  },
+  summaryLabel: {
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.xs,
+    color: colors.muted,
+  },
+  listHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: spacing.xs,
+  },
+  listCaption: {
+    flex: 1,
+    fontFamily: fontFamily.medium,
+    fontSize: fontSize.xs,
+    color: colors.muted,
+  },
+  listCount: {
+    minWidth: 20,
+    borderRadius: radius,
+    backgroundColor: colors.chip,
     paddingHorizontal: spacing.xs,
     paddingVertical: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.chip,
   },
-  tabCountOn: { backgroundColor: colors.sky },
-  tabCountText: { fontFamily: fontFamily.bold, fontSize: fontSize.xxs, color: colors.muted },
-  tabCountTextOn: { color: colors.blue },
-  tabText: {
-    fontFamily: fontFamily.medium,
+  listCountText: {
+    fontFamily: fontFamily.bold,
+    fontSize: fontSize.xxs,
+    color: colors.muted,
+  },
+  cardWrap: { marginBottom: spacing.sm },
+  emptyCard: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.xl,
+    borderRadius: 20,
+  },
+  emptyIcon: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: colors.sky,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    marginBottom: spacing.xs,
+  },
+  emptyTitle: {
+    fontFamily: fontFamily.bold,
+    fontSize: fontSize.lg,
+    color: colors.ink,
+  },
+  emptySub: {
+    fontFamily: fontFamily.regular,
     fontSize: fontSize.sm,
     color: colors.muted,
-    paddingVertical: spacing.sm,
+    textAlign: 'center',
+    lineHeight: fontSize.sm + 5,
   },
-  tabTextOn: { fontFamily: fontFamily.bold, color: colors.blue },
-  row: { flexDirection: 'row', gap: spacing.sm },
-  rail: { width: 40, alignItems: 'center' },
-  month: { fontFamily: fontFamily.bold, fontSize: fontSize.xxs, color: colors.muted },
-  dayNum: { fontFamily: fontFamily.bold, fontSize: fontSize.xl, color: colors.ink },
-  dot: { width: spacing.sm, height: spacing.sm, borderRadius: 4, marginTop: spacing.xs },
-  line: { width: 2, flex: 1, backgroundColor: colors.creamLine, marginTop: spacing.xs },
-  card: { flex: 1 },
-  cardPress: { flex: 1 },
-  cardTitle: { fontFamily: fontFamily.bold, fontSize: fontSize.lg, color: colors.ink },
-  meta: { fontFamily: fontFamily.regular, fontSize: fontSize.sm, color: colors.muted },
-  pills: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.xs },
-  lockNote: {
+  emptyAction: { marginTop: spacing.xs },
+  errCard: {
+    borderWidth: 1,
+    borderColor: colors.danger,
+    gap: spacing.sm,
+  },
+  errText: {
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.xs,
-    color: colors.muted,
-    marginTop: spacing.sm,
+    fontSize: fontSize.sm,
+    color: colors.danger,
   },
-  checkinOk: {
-    fontFamily: fontFamily.bold,
-    fontSize: fontSize.xs,
-    color: colors.blue,
-    marginTop: spacing.sm,
-  },
-  checkinNeeded: {
-    fontFamily: fontFamily.regular,
-    fontSize: fontSize.xs,
-    color: colors.muted,
-    marginBottom: spacing.sm,
-  },
-  mt: { marginTop: spacing.sm },
-  btns: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
-  flex: { flex: 1 },
-  rate: { marginTop: spacing.sm, gap: spacing.sm },
-  rateLabel: { fontFamily: fontFamily.bold, fontSize: fontSize.sm, color: colors.ink },
-  meet: { fontFamily: fontFamily.regular, fontSize: fontSize.xs, color: colors.blue, marginTop: spacing.sm },
-  emptyTitle: { fontFamily: fontFamily.bold, fontSize: fontSize.lg, color: colors.ink },
-  emptySub: { fontFamily: fontFamily.regular, fontSize: fontSize.sm, color: colors.muted },
-  center: { alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.lg },
-  errCard: { borderWidth: 1, borderColor: colors.danger, gap: spacing.sm },
-  errText: { fontFamily: fontFamily.regular, fontSize: fontSize.sm, color: colors.danger },
 });

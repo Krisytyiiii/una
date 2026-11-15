@@ -256,27 +256,94 @@ export function SettingsSkeleton() {
   );
 }
 
-/** /refer-student: stacked CTA card + 9-col history table. */
+/** /refer-student: header + 4 KPI tiles, then sent-list table + right rail. */
 export function ReferStudentSkeleton() {
   return (
-    <SkeletonRoot>
-      <PageHeaderSkeleton action="buttons" breadcrumb={false} />
-      <div className="rounded-lg border border-ink/10 bg-white p-6 text-center shadow-card">
-        <div className="mx-auto h-4 w-56 rounded-full bg-ink/10" />
-        <div className="mx-auto mt-2 h-3 w-96 max-w-full rounded-full bg-ink/10" />
-        <div className="mx-auto mt-4 h-10 w-48 rounded-lg bg-ink/10" />
+    <SkeletonRoot className="space-y-5">
+      {/* Eyebrow + title + description / What-next pill + primary CTA */}
+      <div className="border-b border-ink/10 pb-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="h-2.5 w-32 rounded-full bg-ink/10" />
+            <div className="mt-2 h-7 w-56 max-w-full rounded-lg bg-ink/10" />
+            <div className="mt-2 h-3.5 w-full max-w-[620px] rounded-full bg-ink/10" />
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <div className="h-6 w-40 rounded-full bg-ink/10" />
+            <div className="h-6 w-44 rounded-full bg-ink/10" />
+          </div>
+        </div>
       </div>
-      <div className="rounded-lg border border-ink/10 bg-white p-6 shadow-card">
-        <div className="h-4 w-48 rounded-full bg-ink/10" />
-        <div className="mt-4 grid grid-cols-9 gap-2">
-          {Array.from({ length: 9 }).map((_, i) => (
-            <div key={i} className="h-3 rounded-full bg-ink/10" />
+
+      {/* Metric strip */}
+      <div>
+        <div className="mb-2.5 h-2.5 w-44 rounded-full bg-ink/10" />
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div
+              key={i}
+              className="min-h-[108px] rounded-xl border border-ink/10 bg-white p-3.5 shadow-[0_1px_2px_rgba(16,24,40,0.04)]"
+            >
+              <div className="h-2.5 w-2/3 rounded-full bg-ink/10" />
+              <div className="mt-4 h-7 w-16 rounded-lg bg-ink/10" />
+              <div className="mt-3 h-2.5 w-1/2 rounded-full bg-ink/10" />
+            </div>
           ))}
         </div>
-        <div className="mt-3 space-y-2.5">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-12 rounded-lg bg-ink/10" />
-          ))}
+      </div>
+
+      {/* Sent table + side rail */}
+      <div className="grid items-start gap-4 xl:grid-cols-12">
+        <div className="min-w-0 xl:col-span-8">
+          <section className="overflow-hidden rounded-xl border border-ink/10 bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
+            <div className="flex items-start justify-between gap-3 border-b border-ink/[0.07] px-5 py-3.5">
+              <div>
+                <div className="h-4 w-40 rounded-full bg-ink/10" />
+                <div className="mt-1.5 h-3 w-56 rounded-full bg-ink/10" />
+              </div>
+              <div className="h-4 w-14 shrink-0 rounded-full bg-ink/10" />
+            </div>
+            <div className="flex gap-3 border-b border-ink/[0.07] bg-cream/40 px-5 py-3">
+              {[28, 12, 24, 16, 20, 12, 14].map((w, i) => (
+                <div key={i} className="h-2.5 rounded-full bg-ink/10" style={{ width: `${w}%` }} />
+              ))}
+            </div>
+            <div className="divide-y divide-ink/[0.06]">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3 px-5 py-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="h-3.5 w-32 rounded-full bg-ink/10" />
+                    <div className="mt-2 h-2.5 w-64 max-w-full rounded-full bg-ink/5" />
+                  </div>
+                  <div className="h-5 w-16 rounded-full bg-ink/10" />
+                  <div className="h-5 w-20 rounded-full bg-ink/10" />
+                  <div className="h-6 w-12 rounded-full bg-ink/10" />
+                  <div className="h-6 w-16 rounded-full bg-ink/10" />
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between border-t border-ink/[0.07] px-5 py-3">
+              <div className="h-3 w-44 rounded-full bg-ink/10" />
+              <div className="h-6 w-40 rounded-full bg-ink/10" />
+            </div>
+          </section>
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-4 xl:col-span-4">
+          <PanelShellSkeleton rows={1} titleWidth="w-36" withHint>
+            <div className="mt-4 space-y-3">
+              <div className="h-2.5 w-full rounded-full bg-ink/10" />
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-2.5">
+                  <div className="h-2 w-2 rounded-full bg-ink/10" />
+                  <div className="h-3 flex-1 rounded-full bg-ink/10" />
+                  <div className="h-3 w-6 rounded-full bg-ink/10" />
+                </div>
+              ))}
+            </div>
+          </PanelShellSkeleton>
+          <PanelShellSkeleton rows={4} rowHeight="h-9" titleWidth="w-40" withHint />
+          <div className="h-24 rounded-xl border border-accent-200 bg-accent-50/70" />
         </div>
       </div>
     </SkeletonRoot>

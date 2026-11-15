@@ -3,7 +3,9 @@ import { ensureStudentRows } from './ensureStudent';
 
 export type AccountSetup =
   | { ok: true; needsStudentDetails: boolean; fullName: string }
-  | { ok: false; error: string };
+  /** Staff account: the mobile app must refuse it (session signed out by caller). */
+  | { ok: false; blocked: true; role: string }
+  | { ok: false; blocked?: false; error: string };
 
 /**
  * Finish account setup after a Google sign-in.
@@ -13,6 +15,9 @@ export type AccountSetup =
  * student keeps their row; a first-time Google user gets one with those
  * fields empty (`student_no` has been nullable since 00020) and the caller
  * sends them to the one-time completion form on /register.
+ *
+ * Staff accounts are rejected before any row is written, so signing in with a
+ * counselor/head/faculty Google account cannot create a student record.
  */
 export async function finishOAuthAccount(supabase: TypedSupabaseClient): Promise<AccountSetup> {
   const {
@@ -28,7 +33,10 @@ export async function finishOAuthAccount(supabase: TypedSupabaseClient): Promise
     email: user.email ?? '',
     fullName,
   });
-  if (!ensured.ok) return { ok: false, error: ensured.error };
+  if (!ensured.ok) {
+    if (ensured.notStudent) return { ok: false, blocked: true, role: ensured.role };
+    return { ok: false, error: ensured.error };
+  }
 
   const { data, error } = await supabase
     .from('students')
@@ -48,7 +56,14 @@ export async function finishOAuthAccount(supabase: TypedSupabaseClient): Promise
 /** One-time student details collected after a Google sign-up. */
 export async function saveStudentDetails(
   supabase: TypedSupabaseClient,
-  input: { studentNo: string; program: string; yearLevel: string },
+  input: {
+    studentNo: string;
+    program: string;
+    yearLevel: string;
+    /** Optional signup demographics (00079) — only written when provided. */
+    gender?: 'male' | 'female' | 'prefer_not_to_say';
+    birthdate?: string;
+  },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const {
     data: { user },
@@ -61,6 +76,8 @@ export async function saveStudentDetails(
       student_no: input.studentNo,
       program: input.program,
       year_level: input.yearLevel,
+      ...(input.gender ? { gender: input.gender } : {}),
+      ...(input.birthdate ? { birthdate: input.birthdate } : {}),
     })
     .eq('profile_id', user.id);
 
